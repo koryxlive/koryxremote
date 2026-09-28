@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Koryx Remote",
+        "description": "Entre com a conta Koryx Remote. A senha não fica salva.",
+        "data": {
+          "email": "E-mail",
+          "password": "Senha"
+        }
+      },
+      "server": {
+        "title": "Servidor Koryx Remote",
+        "description": "O Home Assistant não alcançou o Koryx. Informe o endereço da API.",
+        "data": {
+          "api_url": "Servidor"
+        }
+      },
+      "linked": {
+        "title": "Casa ligada",
+        "description": "Pronto. Acesse a sua casa de fora em:\n\n{url}\n\nGuarde este endereço. Ele também fica no HA, em Configurações → Dispositivos, no dispositivo Koryx Remote."
+      }
+    },
+    "error": {
+      "invalid_auth": "E-mail ou senha incorretos.",
+      "trial_expired": "O trial de 15 dias acabou.",
+      "cannot_connect": "Não foi possível falar com o Koryx Remote.",
+      "unknown": "Não foi possível ligar a casa."
+    },
+    "abort": {
+      "already_configured": "Esta conta já está ligada."
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "domain": "koryx_remote",
+  "name": "Koryx Remote",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["http"],
+  "documentation": "https://koryx.com.br",
+  "iot_class": "cloud_push",
+  "requirements": [],
+  "version": "0.1.0"
+}
