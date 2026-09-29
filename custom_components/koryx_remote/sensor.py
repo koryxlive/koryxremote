@@ -74,16 +74,40 @@ class KoryxPlanSensor(KoryxBaseSensor):
 
 
 class KoryxExpirySensor(KoryxBaseSensor):
-    """Até quando o acesso vale — trial ou assinatura."""
+    """Até quando o acesso vale — trial ou assinatura.
 
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    O `unique_id` é `..._trial`, herdado da entidade `0.1.4` que se chamava
+    "Trial termina em". Não é descuido: no HA a entidade é o `unique_id`, então
+    reaproveitá-lo faz o registry **renomear** a existente. Com um id novo, o HA
+    registraria outra e a antiga ficaria órfã no registry — visível e
+    "Indisponível" na tela do dispositivo, apontando para um objeto que não
+    existe mais. O nome pode mudar à vontade; o id, não.
+    """
+
     _attr_icon = "mdi:calendar-clock"
 
     def __init__(self, entry: ConfigEntry, link: KoryxLink) -> None:
-        super().__init__(entry, link, "expiry", "Vence em")
+        super().__init__(entry, link, "trial", "Vence em")
 
     @property
-    def native_value(self) -> datetime | None:
+    def device_class(self) -> SensorDeviceClass | None:
+        """Timestamp só quando há data; sem data o HA não sabe renderizar `None`.
+
+        Um `device_class` de timestamp exige data/hora. Com `native_value` nulo
+        o HA não mostra vazio: mostra "Desconhecido", como se o dado tivesse
+        falhado. No plano pago o `device_class` sai e o valor vira
+        "Sem vencimento" — que é a verdade, sem parecer erro.
+        """
+        return None if self._link.expiry is None else SensorDeviceClass.TIMESTAMP
+
+    @property
+    def native_value(self) -> datetime | str | None:
+        if self._link.expiry is None:
+            # Plano pago: sem data de renovação no servidor (não há billing).
+            # O texto ocupa o lugar da data para a tela dizer algo verdadeiro,
+            # em vez de "Desconhecido". O valor literal não é acento nem caixa
+            # alta porque o HA o usa em automação e em URL de histórico.
+            return "sem_vencimento"
         return self._link.expiry
 
     @property
