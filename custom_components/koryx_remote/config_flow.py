@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
-from .const import CONF_API_URL, CONF_CREDENTIAL, CONF_EMAIL, CONF_RELAY_URL, CONF_SLUG, CONF_URL, DEFAULT_API_URL, DOMAIN
+from .const import CONF_API_URL, CONF_CREDENTIAL, CONF_EMAIL, CONF_PLAN, CONF_RELAY_URL, CONF_SLUG, CONF_TRIAL_ENDS_AT, CONF_URL, DEFAULT_API_URL, DOMAIN
 
 
 class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -27,6 +27,8 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
         self._relay_url = ""
         self._slug = ""
         self._url = ""
+        self._plan = "trial"
+        self._trial_ends_at = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
@@ -71,6 +73,8 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
         self._relay_url = str(linked["relayUrl"])
         self._slug = str(linked["slug"])
         self._url = str(linked["url"])
+        self._plan = str(linked.get("plan") or "trial")
+        self._trial_ends_at = str(linked.get("trialEndsAt") or "")
         return await self.async_step_linked()
 
     async def async_step_linked(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -90,6 +94,10 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_RELAY_URL: self._relay_url,
                     CONF_SLUG: self._slug,
                     CONF_URL: self._url,
+                    # Plano e fim do trial ficam gravados: o sensor de expiração
+                    # já nasce com a data, mesmo antes do primeiro PING.
+                    CONF_PLAN: self._plan,
+                    CONF_TRIAL_ENDS_AT: self._trial_ends_at,
                 },
             )
         return self.async_show_form(

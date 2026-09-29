@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
-from .const import CONF_CREDENTIAL, CONF_RELAY_URL
+from .const import CONF_CREDENTIAL, CONF_PLAN, CONF_RELAY_URL, CONF_TRIAL_ENDS_AT
 
 
 class TrialEnded(Exception):
@@ -28,11 +29,27 @@ class KoryxLink:
         self.hass = hass
         self.entry = entry
         self.connected = False
+        # Vem do `/agents/link` e do `AUTH_OK`. O sensor de expiração lê daqui.
+        self.plan = str(entry.data.get(CONF_PLAN) or "trial")
+        self.trial_ends_at = _parse_datetime(entry.data.get(CONF_TRIAL_ENDS_AT))
         self._stop = asyncio.Event()
         self._listeners: list[Callable[[], None]] = []
         self._writers: dict[str, asyncio.StreamWriter] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._ws: aiohttp.ClientWebSocketResponse | None = None
+
+    def update_entitlement(self, plan: Any, trial_ends_at: Any) -> None:
+        """Atualiza plano e fim do trial, avisando só quando algo muda."""
+        changed = False
+        if isinstance(plan, str) and plan and plan != self.plan:
+            self.plan = plan
+            changed = True
+        parsed = _parse_datetime(trial_ends_at)
+        if parsed != self.trial_ends_at:
+            self.trial_ends_at = parsed
+            changed = True
+        if changed:
+            self._notify()
 
     def add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
         self._listeners.append(update)
@@ -115,6 +132,9 @@ class KoryxLink:
         kind = frame.get("type")
         if kind == "AUTH_OK":
             self._set_connected(True)
+            # O Relay confirma plano e trial no handshake, então o sensor não
+            # depende só do que ficou gravado no momento do login.
+            self.update_entitlement(frame.get("plan"), frame.get("trialEndsAt"))
             return True
         error = frame.get("error")
         if kind == "ERROR" and isinstance(error, dict) and error.get("code") == "TRIAL_EXPIRED":
@@ -212,5 +232,21 @@ class KoryxLink:
         if self.connected == connected:
             return
         self.connected = connected
+        self._notify()
+
+    def _notify(self) -> None:
         for update in list(self._listeners):
             update()
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    """Aceita o ISO que a API manda e devolve consciente de fuso (UTC)."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed

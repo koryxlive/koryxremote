@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from .client import KoryxLink
 from .const import CONF_URL, DOMAIN
 
-PLATFORMS = ["binary_sensor"]
+PLATFORMS = ["binary_sensor", "sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
