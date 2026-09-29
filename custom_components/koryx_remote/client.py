@@ -17,6 +17,14 @@ from homeassistant.config_entries import ConfigEntry
 
 from .const import CONF_CREDENTIAL, CONF_PLAN, CONF_RELAY_URL, CONF_TRIAL_ENDS_AT
 
+# Nome do plano para mostrar no HA. A chave é o id cru que a API manda; o valor
+# é o que a pessoa lê. Plano que não estiver aqui volta cru, em vez de virar
+# "desconhecido" — melhor mostrar `pro` do que esconder o que o servidor disse.
+PLAN_LABELS = {
+    "trial": "Trial",
+    "basic": "Básico",
+}
+
 
 class TrialEnded(Exception):
     """O Relay recusou porque o trial acabou."""
@@ -50,6 +58,26 @@ class KoryxLink:
             changed = True
         if changed:
             self._notify()
+
+    @property
+    def plan_label(self) -> str:
+        """Nome do plano para mostrar. Desconhecido volta cru, não inventado."""
+        return PLAN_LABELS.get(self.plan, self.plan)
+
+    @property
+    def expiry(self) -> datetime | None:
+        """Quando o acesso vence, seja trial ou assinatura.
+
+        O plano pago hoje não tem data de renovação no servidor (não há
+        billing), e o `trialEndsAt` que a API manda para ele é a data do trial
+        **já vencido** — mostrá-la diria ao cliente pagante que ele venceu,
+        quando na verdade está ativo. Então `basic` devolve `None`: sem
+        vencimento conhecido, não uma data errada. Quando existir cobrança,
+        é aqui que a data da assinatura entra.
+        """
+        if self.plan == "basic":
+            return None
+        return self.trial_ends_at
 
     def add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
         self._listeners.append(update)
