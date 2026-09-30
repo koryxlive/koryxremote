@@ -23,7 +23,7 @@
     },
     "error": {
       "invalid_auth": "Incorrect email or password.",
-      "trial_expired": "The 15-day trial has ended.",
+      "access_ended": "The access period has ended.",
       "cannot_connect": "Could not reach Koryx Remote.",
       "unknown": "Could not connect the home."
     },

@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
 
-from .const import CONF_API_URL, CONF_CREDENTIAL, CONF_EMAIL, CONF_PLAN, CONF_RELAY_URL, CONF_SLUG, CONF_TRIAL_ENDS_AT, CONF_URL, DEFAULT_API_URL, DOMAIN
+from .const import CONF_API_URL, CONF_CREDENTIAL, CONF_EMAIL, CONF_ENDS_AT, CONF_PLAN, CONF_RELAY_URL, CONF_SLUG, CONF_URL, DEFAULT_API_URL, DOMAIN
 
 
 class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -28,7 +28,7 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
         self._slug = ""
         self._url = ""
         self._plan = "trial"
-        self._trial_ends_at = ""
+        self._ends_at = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
@@ -53,11 +53,11 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
                 data_schema=self._user_schema(),
                 errors={"base": "invalid_auth"},
             )
-        except TrialExpired:
+        except AccessEnded:
             return self.async_show_form(
                 step_id="user",
                 data_schema=self._user_schema(),
-                errors={"base": "trial_expired"},
+                errors={"base": "access_ended"},
             )
         except (aiohttp.ClientError, TimeoutError, KeyError):
             if not from_server:
@@ -74,7 +74,7 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
         self._slug = str(linked["slug"])
         self._url = str(linked["url"])
         self._plan = str(linked.get("plan") or "trial")
-        self._trial_ends_at = str(linked.get("trialEndsAt") or "")
+        self._ends_at = str(linked.get("endsAt") or "")
         return await self.async_step_linked()
 
     async def async_step_linked(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -94,10 +94,10 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_RELAY_URL: self._relay_url,
                     CONF_SLUG: self._slug,
                     CONF_URL: self._url,
-                    # Plano e fim do trial ficam gravados: o sensor de expiração
-                    # já nasce com a data, mesmo antes do primeiro PING.
+                    # Plano e fim do acesso ficam gravados: o sensor de
+                    # vencimento já nasce com a data, mesmo antes do 1º PING.
                     CONF_PLAN: self._plan,
-                    CONF_TRIAL_ENDS_AT: self._trial_ends_at,
+                    CONF_ENDS_AT: self._ends_at,
                 },
             )
         return self.async_show_form(
@@ -127,8 +127,8 @@ class InvalidAuth(Exception):
     """Conta recusada."""
 
 
-class TrialExpired(Exception):
-    """Trial vencido."""
+class AccessEnded(Exception):
+    """O acesso terminou: trial vencido ou plano pago sem renovação."""
 
 
 async def _link(api_url: str, email: str, password: str) -> dict[str, Any]:
@@ -140,7 +140,7 @@ async def _link(api_url: str, email: str, password: str) -> dict[str, Any]:
         if response.status == 401:
             raise InvalidAuth
         if response.status == 403:
-            raise TrialExpired
+            raise AccessEnded
         if response.status != 201:
             raise aiohttp.ClientError
         body = await response.json()

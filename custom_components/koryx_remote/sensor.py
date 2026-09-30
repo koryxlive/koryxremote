@@ -103,10 +103,11 @@ class KoryxExpirySensor(KoryxBaseSensor):
     @property
     def native_value(self) -> datetime | str | None:
         if self._link.expiry is None:
-            # Plano pago: sem data de renovação no servidor (não há billing).
-            # O texto ocupa o lugar da data para a tela dizer algo verdadeiro,
-            # em vez de "Desconhecido". O valor literal não é acento nem caixa
-            # alta porque o HA o usa em automação e em URL de histórico.
+            # Conta sem prazo gravado no servidor: o admin não preencheu a data
+            # do plano pago ainda. O texto ocupa o lugar da data para a tela
+            # dizer algo verdadeiro, em vez de "Desconhecido". O valor literal
+            # não leva acento nem caixa alta porque o HA o usa em automação e
+            # na URL de histórico.
             return "sem_vencimento"
         return self._link.expiry
 
@@ -116,8 +117,8 @@ class KoryxExpirySensor(KoryxBaseSensor):
         ends_at = self._link.expiry
         base = {"plan": plan, "plan_label": self._link.plan_label}
         if ends_at is None:
-            # Plano pago sem data de renovação no servidor (não há billing).
-            # "sem_vencimento" é a verdade; "unknown" faria parecer falha.
+            # Sem prazo gravado. "sem_vencimento" é a verdade; "unknown" faria
+            # parecer que o dado falhou.
             return {**base, "status": "sem_vencimento", "days_remaining": None}
         remaining = ends_at - datetime.now(UTC)
         seconds = remaining.total_seconds()

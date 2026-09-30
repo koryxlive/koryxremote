@@ -15,7 +15,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
-from .const import CONF_CREDENTIAL, CONF_PLAN, CONF_RELAY_URL, CONF_TRIAL_ENDS_AT
+from .const import CONF_CREDENTIAL, CONF_ENDS_AT, CONF_PLAN, CONF_RELAY_URL
 
 # Nome do plano para mostrar no HA. A chave é o id cru que a API manda; o valor
 # é o que a pessoa lê. Plano que não estiver aqui volta cru, em vez de virar
@@ -37,24 +37,24 @@ class KoryxLink:
         self.hass = hass
         self.entry = entry
         self.connected = False
-        # Vem do `/agents/link` e do `AUTH_OK`. O sensor de expiração lê daqui.
+        # Vem do `/agents/link` e do `AUTH_OK`. O sensor de vencimento lê daqui.
         self.plan = str(entry.data.get(CONF_PLAN) or "trial")
-        self.trial_ends_at = _parse_datetime(entry.data.get(CONF_TRIAL_ENDS_AT))
+        self.ends_at = _parse_datetime(entry.data.get(CONF_ENDS_AT))
         self._stop = asyncio.Event()
         self._listeners: list[Callable[[], None]] = []
         self._writers: dict[str, asyncio.StreamWriter] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._ws: aiohttp.ClientWebSocketResponse | None = None
 
-    def update_entitlement(self, plan: Any, trial_ends_at: Any) -> None:
-        """Atualiza plano e fim do trial, avisando só quando algo muda."""
+    def update_entitlement(self, plan: Any, ends_at: Any) -> None:
+        """Atualiza plano e fim do acesso, avisando só quando algo muda."""
         changed = False
         if isinstance(plan, str) and plan and plan != self.plan:
             self.plan = plan
             changed = True
-        parsed = _parse_datetime(trial_ends_at)
-        if parsed != self.trial_ends_at:
-            self.trial_ends_at = parsed
+        parsed = _parse_datetime(ends_at)
+        if parsed != self.ends_at:
+            self.ends_at = parsed
             changed = True
         if changed:
             self._notify()
@@ -66,18 +66,14 @@ class KoryxLink:
 
     @property
     def expiry(self) -> datetime | None:
-        """Quando o acesso vence, seja trial ou assinatura.
+        """Quando o acesso termina — trial, mês pago, ano pago.
 
-        O plano pago hoje não tem data de renovação no servidor (não há
-        billing), e o `trialEndsAt` que a API manda para ele é a data do trial
-        **já vencido** — mostrá-la diria ao cliente pagante que ele venceu,
-        quando na verdade está ativo. Então `basic` devolve `None`: sem
-        vencimento conhecido, não uma data errada. Quando existir cobrança,
-        é aqui que a data da assinatura entra.
+        Sem exceção por plano: quem tem data mostra a data. A regra de esconder
+        a data do plano pago saiu daqui junto com a coluna `trial_ends_at`; o
+        servidor agora manda a renovação do plano pago no mesmo campo, e o
+        sensor só desenha o que recebeu.
         """
-        if self.plan == "basic":
-            return None
-        return self.trial_ends_at
+        return self.ends_at
 
     def add_listener(self, update: Callable[[], None]) -> Callable[[], None]:
         self._listeners.append(update)
@@ -162,10 +158,10 @@ class KoryxLink:
             self._set_connected(True)
             # O Relay confirma plano e trial no handshake, então o sensor não
             # depende só do que ficou gravado no momento do login.
-            self.update_entitlement(frame.get("plan"), frame.get("trialEndsAt"))
+            self.update_entitlement(frame.get("plan"), frame.get("endsAt"))
             return True
         error = frame.get("error")
-        if kind == "ERROR" and isinstance(error, dict) and error.get("code") == "TRIAL_EXPIRED":
+        if kind == "ERROR" and isinstance(error, dict) and error.get("code") == "PLAN_EXPIRED":
             raise TrialEnded
         if kind != "DATA" or not authed:
             return authed
