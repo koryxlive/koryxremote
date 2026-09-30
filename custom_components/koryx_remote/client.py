@@ -156,10 +156,15 @@ class KoryxLink:
         kind = frame.get("type")
         if kind == "AUTH_OK":
             self._set_connected(True)
-            # O Relay confirma plano e trial no handshake, então o sensor não
-            # depende só do que ficou gravado no momento do login.
+            # Handshake: plano e vencimento vêm junto para o sensor não ficar
+            # preso ao que foi gravado no login.
             self.update_entitlement(frame.get("plan"), frame.get("endsAt"))
             return True
+        if kind == "PONG":
+            # A cada PING (~15 s) o Relay reenvia plano/endsAt. Sem isso, uma
+            # mudança no /kxpanel só apareceria no HA depois de reconectar.
+            self.update_entitlement(frame.get("plan"), frame.get("endsAt"))
+            return authed
         error = frame.get("error")
         if kind == "ERROR" and isinstance(error, dict) and error.get("code") == "PLAN_EXPIRED":
             raise TrialEnded
