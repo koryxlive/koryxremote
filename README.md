@@ -4,11 +4,13 @@ Acesse o seu Home Assistant de qualquer lugar, sem abrir portas no roteador.
 
 Esta é a integração que o Home Assistant baixa. Ela abre uma conexão de saída
 para o Koryx Remote e devolve a interface original do Home Assistant em
-`https://{sua-casa}.koryx.com.br`.
+`https://{sua-casa}.koryx.one`.
+
+> Migração de domínio pendente: `koryx.one` e `koryxremote.com` já estão registrados, mas a publicação de DNS/virada de tráfego ainda não foi concluída.
 
 ## Instalação
 
-1. Crie a conta em [koryx.com.br](https://koryx.com.br).
+1. Crie a conta em [koryxremote.com](https://koryxremote.com). O hub [koryx.com.br](https://koryx.com.br) apresenta as plataformas (Live e Remote) e aponta para elas.
 2. No Home Assistant, instale esta integração (HACS ou cópia manual, abaixo).
 3. Reinicie o Home Assistant.
 4. Abra [Instalar no Home Assistant](https://my.home-assistant.io/redirect/config_flow_start/?domain=koryx_remote)
@@ -26,7 +28,7 @@ No fim, o próprio Home Assistant mostra o endereço da sua casa e o guarda em
 
 ### Manual (sem HACS)
 
-Baixe [koryx_remote.zip](https://koryx.com.br/ha/koryx_remote.zip), extraia em
+Baixe [koryx_remote.zip](https://koryxremote.com/ha/koryx_remote.zip), extraia em
 `/config` do Home Assistant (fica `custom_components/koryx_remote`) e reinicie.
 
 ## Como funciona

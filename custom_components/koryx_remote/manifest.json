@@ -4,8 +4,8 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": ["http"],
-  "documentation": "https://koryx.com.br",
+  "documentation": "https://koryxremote.com",
   "iot_class": "cloud_push",
   "requirements": [],
-  "version": "0.1.8"
+  "version": "0.1.9"
 }

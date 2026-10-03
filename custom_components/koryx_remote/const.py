@@ -1,7 +1,7 @@
 """Constantes da integração Koryx Remote."""
 
 DOMAIN = "koryx_remote"
-DEFAULT_API_URL = "https://koryx.com.br"
+DEFAULT_API_URL = "https://koryxremote.com"
 
 CONF_API_URL = "api_url"
 CONF_EMAIL = "email"
