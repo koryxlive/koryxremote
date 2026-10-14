@@ -113,9 +113,17 @@ class KoryxAlexaConfig:
 async def async_handle_directive(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    request: dict[str, Any],
+    directive: dict[str, Any],
 ) -> dict[str, Any]:
     """Processa um directive cru da Alexa com os handlers do core.
+
+    O `directive` aqui é o objeto de dentro do envelope, sem a chave
+    `"directive"` — é o formato que o túnel carrega, para não repetir a mesma
+    palavra em cada camada. O `async_handle_message` do core, porém, espera o
+    envelope inteiro: ele faz `request[API_DIRECTIVE][API_HEADER]` logo na
+    entrada, como se tivesse recebido o corpo HTTP cru da Alexa. Re-embrulhar
+    aqui, na fronteira, é o que mantém as duas convenções sem vazar uma para
+    dentro da outra.
 
     Import tardio de propósito: `homeassistant.components.alexa` puxa o
     componente `alexa` inteiro, e a integração não deve carregá-lo só para
@@ -133,6 +141,6 @@ async def async_handle_directive(
     return await smart_home.async_handle_message(
         hass,
         config,  # type: ignore[arg-type]
-        request,
+        {"directive": directive},
         context=Context(user_id=entry.entry_id),
     )
