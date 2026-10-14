@@ -22,7 +22,15 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE
 
-from .const import CONF_ALEXA_USER_ID, CONF_API_URL, CONF_CREDENTIAL, CONF_EXPOSED_ENTITIES, CONF_REPORT_STATE
+from .const import (
+    CONF_ALEXA_USER_ID,
+    CONF_API_URL,
+    CONF_CREDENTIAL,
+    CONF_EXPOSED_ENTITIES,
+    CONF_REPORT_STATE,
+    COVER_DEFAULT_DISPLAY_CATEGORY,
+    COVER_DISPLAY_CATEGORIES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,10 +70,10 @@ class KoryxAlexaConfig:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
-        # Só luzes, por enquanto: é o que a tela de Opções deixa escolher, e o
-        # que o Discovery anuncia. Um domínio novo aqui precisa do mapeamento
-        # correspondente no core, que já existe para `switch`/`cover` — basta
-        # liberar na seleção quando houver uso.
+        # Entidades que o usuário marcou na tela de Opções. O escopo (domínios
+        # escolhíveis) vive em `EXPOSABLE_DOMAINS`, no `const.py`; aqui é só o
+        # conjunto concreto. `should_expose` e a inferência de categoria
+        # (`_build_entity_config`) leem daqui.
         self._exposed = set(entry.options.get(CONF_EXPOSED_ENTITIES) or [])
         # Report State proativo: **ligado por padrão**. O custo é baixo e só
         # existe quando a Alexa já autorizou a casa: o core só entra no modo
@@ -75,6 +83,9 @@ class KoryxAlexaConfig:
         # quem nunca usou a skill. O usuário pode desligar na tela de Opções.
         # Ver `docs/report-state.md`.
         self._report_state = bool(entry.options.get(CONF_REPORT_STATE, True))
+        # Categoria por entidade (`entity_config`), montada sob demanda e
+        # descartada no `refresh`. Ver `entity_config`.
+        self._entity_config: dict[str, dict[str, Any]] | None = None
 
     @callback
     def should_expose(self, entity_id: str) -> bool:
@@ -91,6 +102,9 @@ class KoryxAlexaConfig:
         """Recarrega a seleção depois de mudar na tela de Opções."""
         self._exposed = set(self.entry.options.get(CONF_EXPOSED_ENTITIES) or [])
         self._report_state = bool(self.entry.options.get(CONF_REPORT_STATE, True))
+        # O `entity_config` depende de quais entidades estão expostas; um
+        # reload troca a seleção, então o cache tem de cair junto.
+        self._entity_config = None
 
     @property
     def endpoint(self) -> str | None:
@@ -115,7 +129,7 @@ class KoryxAlexaConfig:
 
     @property
     def entity_config(self) -> dict[str, Any]:
-        """Personalização por entidade, que aqui não existe.
+        """Categoria da Alexa por entidade, inferida — não configurada.
 
         O `AlexaEntity` do core lê `config.entity_config` no **construtor**, para
         cada entidade suportada, antes mesmo de perguntar se ela deve ser
@@ -125,21 +139,65 @@ class KoryxAlexaConfig:
         'entity_config'`, o `async_get_entities` engole a exceção e o
         `Discover` devolve `endpoints: []` com as luzes certas e expostas.
 
-        Vazio é a resposta correta, não um placeholder: o mapa serve para o
-        usuário renomear ou fixar `display_categories` por entidade no
-        `configuration.yaml`, e a nossa seleção vive em `entry.options`. Quem
-        quiser personalizar tem o HA para isso; a Alexa lê o nome do registry.
+        **Por que não é `{}`.** O core deriva a categoria da Alexa da
+        `device_class` da entidade, em `AlexaEntity.default_display_categories`
+        — e para `cover` sem `device_class` a resposta é `OTHER` ("Outro" no
+        app). A maioria das cortinas/persianas reais (MQTT, Tuya, HomeKit) não
+        publica `device_class`, e pedir que cada usuário edite o HA de cada
+        dispositivo é inviável: a Alexa precisa entender a cortina como cortina
+        mesmo que o HA não tenha dito o que ela é.
 
-        **Nota de escalabilidade (cover):** o core não sabe se um `cover` é
-        persiana, porta ou janela, então classifica todos como `OTHER` — o app
-        da Alexa mostra "Outro". Abrir/fechar por voz funciona (via
-        `RangeController`, instance `cover.position`); é só o rótulo que fica
-        genérico. Melhorar isso é devolver aqui `{entity_id: {"display_categories":
-        "DOOR"}}`, mas exige uma decisão de UI (o usuário escolhendo a categoria
-        na tela de Opções) — por isso fica para uma entrega própria, não como
-        efeito colateral de ampliar domínio.
+        Então **inferimos só o que o core não sabe**: para `cover`, o
+        `device_class` (quando existe) vira uma categoria de
+        `COVER_DISPLAY_CATEGORIES`; quando falta, cai no
+        `COVER_DEFAULT_DISPLAY_CATEGORY` (`INTERIOR_BLIND`, o rótulo que a
+        Alexa usa para cortina/veneziana/persiana). Isso não sobrepõe o core:
+        ele aplica este mapa antes do default, e o resultado é idêntico ao que
+        o core produziria com `device_class` presente — só que agora também
+        quando ele falta.
+
+        **Só `cover` entra.** É o único domínio em que o core devolve `OTHER`
+        por falta de dado (ver `default_display_categories` de cada adapter:
+        `light`, `climate`, `lock`, `fan`… já têm categoria fixa). Os demais
+        ficam fora para não mexer no que o core acerta — e para o mapa crescer
+        só onde há ganho real.
+
+        `CONF_DISPLAY_CATEGORIES` no `entity_config` também muda as interfaces
+        anunciadas (`AlexaDoorbellEventSource`, sensores de contato/movimento),
+        mas **apenas** para categorias de sensor — uma categoria de `cover`
+        (`INTERIOR_BLIND` etc.) não dispara nenhum desses ramos, então injetar
+        aqui não altera as capacidades, só o rótulo.
+
+        Montado uma vez por config e cacheado: a property é consultada no
+        construtor de **cada** entidade, e varrer `hass.states` a cada chamada
+        seria O(n²) no `Discover`.
         """
-        return {}
+        if self._entity_config is None:
+            self._entity_config = self._build_entity_config()
+        return self._entity_config
+
+    def _build_entity_config(self) -> dict[str, dict[str, Any]]:
+        """Categorias inferidas, só para as entidades cobertas pelo mapa.
+
+        Só as `cover` expostas entram — o `entity_config` do core é lido no
+        construtor de toda entidade suportada, mas devolver entrada para quem
+        já tem categoria do core seria interferir sem motivo.
+        """
+        config: dict[str, dict[str, Any]] = {}
+        for entity_id in self._exposed:
+            if not entity_id.startswith("cover."):
+                continue
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                continue
+            # `device_class` é opcional em `cover`; `None` quando o
+            # fabricante/descoberta não informa — o caso que queremos cobrir.
+            device_class = state.attributes.get("device_class")
+            category = COVER_DISPLAY_CATEGORIES.get(
+                device_class, COVER_DEFAULT_DISPLAY_CATEGORY
+            )
+            config[entity_id] = {"display_categories": category}
+        return config
 
     @callback
     def generate_alexa_id(self, entity_id: str) -> str:

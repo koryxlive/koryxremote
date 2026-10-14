@@ -43,3 +43,31 @@ CONF_REPORT_STATE = "report_state"
 # `sensor`/`binary_sensor`/`number` tambem ficam: so reportam, nunca executam,
 # e so poluem o app.
 EXPOSABLE_DOMAINS = ("light", "cover", "climate")
+
+# Categoria da Alexa por `device_class` de `cover`. O core ja faz esse mapa em
+# `CoverCapabilities.default_display_categories`, mas **so quando a entidade
+# declara `device_class`**: sem ele, cai em `OTHER` e o app mostra "Outro".
+#
+# A maioria das cortinas/persianas do mundo real vem de MQTT/Tuya/HomeKit que
+# nao publicam `device_class` — e nao da para pedir ao usuario que edite o HA
+# de cada dispositivo dele. Entao inferimos aqui: este mapa e a fonte de
+# verdade da categoria quando o core nao tem com o que decidir. Onde o core
+# decide (device_class presente), nao interferimos — ver `alexa.entity_config`.
+#
+# Valores sao `DisplayCategory` do core (`INTERIOR_BLIND`, `EXTERIOR_BLIND`,
+# `DOOR`, `GARAGE_DOOR`). Um device_class fora daqui (ou ausente) vira
+# `COVER_DEFAULT_DISPLAY_CATEGORY` — hoje "persiana interna", que e o rotulo
+# que a Alexa usa para cortina/veneziana/persiana e o caso mais comum.
+COVER_DISPLAY_CATEGORIES: dict[str, str] = {
+    "blind": "INTERIOR_BLIND",
+    "shade": "INTERIOR_BLIND",
+    "curtain": "INTERIOR_BLIND",
+    "window": "EXTERIOR_BLIND",
+    "awning": "EXTERIOR_BLIND",
+    "shutter": "EXTERIOR_BLIND",
+    "door": "DOOR",
+    "garage": "GARAGE_DOOR",
+    "gate": "GARAGE_DOOR",
+}
+
+COVER_DEFAULT_DISPLAY_CATEGORY = "INTERIOR_BLIND"
