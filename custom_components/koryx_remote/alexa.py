@@ -33,10 +33,25 @@ class KoryxAlexaConfig:
 
     Implementa o mesmo contrato do `AbstractConfig`, sem herdar dele: o
     `homeassistant.components.alexa.config` não é API pública estável, e um
-    import direto quebraria a integração numa refatoração do core. O contrato
-    usado aqui é pequeno e verificável — `endpoint`, `locale`,
-    `user_identifier` e `should_expose` — e é exatamente o que
-    `async_handle_message` consulta.
+    import direto quebraria a integração numa refatoração do core.
+
+    **Duck typing aqui não avisa quando falta um pedaço.** O core chama estes
+    membros sem checar existência, em pontos diferentes, e cada ausência tem um
+    sintoma próprio e silencioso:
+
+    - `entity_config` — falta derruba **toda** entidade no `async_get_entities`
+      (o `AlexaEntity` lê no construtor), e o `Discover` volta vazio mesmo com
+      as luzes certas expostas.
+    - `generate_alexa_id` — falta quebra a serialização de cada endpoint.
+    - `supports_auth` / `should_report_state` — faltam no `AcceptGrant`; com
+      `False` o handler pula o bloco de token, que é o que queremos.
+    - `should_expose` — a única decisão de produto de verdade (ver abaixo).
+
+    A lista dos membros que o core consulta sai de `grep -oE "config\\.[a-z_]+"`
+    em `alexa/entities.py`, `alexa/handlers.py` e `alexa/smart_home.py`. Vale
+    conferir contra o core antes de considerar o contrato fechado: um membro
+    novo no core não dá erro de import, dá `AttributeError` em runtime que o
+    `async_get_entities` engole.
     """
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -72,6 +87,65 @@ class KoryxAlexaConfig:
         proactive report sem isto preenchido.
         """
         return None
+
+    @property
+    def entity_config(self) -> dict[str, Any]:
+        """Personalização por entidade, que aqui não existe.
+
+        O `AlexaEntity` do core lê `config.entity_config` no **construtor**, para
+        cada entidade suportada, antes mesmo de perguntar se ela deve ser
+        exposta. O `AbstractConfig` do core traz este default `{}`; como não
+        herdamos dele, sem esta propriedade **todo** adapter estoura com
+        `AttributeError: 'KoryxAlexaConfig' object has no attribute
+        'entity_config'`, o `async_get_entities` engole a exceção e o
+        `Discover` devolve `endpoints: []` com as luzes certas e expostas.
+
+        Vazio é a resposta correta, não um placeholder: o mapa serve para o
+        usuário renomear ou fixar `display_categories` por entidade no
+        `configuration.yaml`, e a nossa seleção vive em `entry.options`. Quem
+        quiser personalizar tem o HA para isso; a Alexa lê o nome do registry.
+        """
+        return {}
+
+    @callback
+    def generate_alexa_id(self, entity_id: str) -> str:
+        """Id estável do endpoint na Alexa, derivado do `entity_id`.
+
+        É o que o `Discover` publica como `endpointId` e o que a Alexa devolve
+        em toda diretiva de execução. Tem de ser **estável entre descobertas**:
+        se mudar, a Alexa perde a referência da luz e o usuário tem de redescobrir
+        e reconfigurar o ambiente.
+
+        O core faz `entity_id.replace(".", "#")`, que é o mesmo algoritmo aqui —
+        e é por isso que não vale inventar outro (UUID, hash): o formato é
+        observável pela Alexa e já é o que o HA usa em todo lugar.
+        """
+        return entity_id.replace(".", "#")
+
+    @property
+    def supports_auth(self) -> bool:
+        """Sem OAuth própria: o vínculo é feito pela API, no Account Linking.
+
+        O `AcceptGrant` do core consulta isto para decidir se guarda o código do
+        grant. Devolver `True` faria o HA tentar um fluxo de token que não
+        existe aqui, e a Alexa ficaria com um vínculo que o HA não reconhece.
+        """
+        return False
+
+    @property
+    def should_report_state(self) -> bool:
+        """Sem Report State proativo, por enquanto.
+
+        A Alexa só sabe o estado de uma luz quando pergunta. Se a luz mudar no
+        interruptor da parede, o app da Alexa fica desatualizado até a próxima
+        consulta. Ligar isso exige um `endpoint` de event gateway e token do
+        LWA (a Alexa exige auth para receber eventos) — peça à parte, que não
+        bloqueia o controle por voz.
+
+        O core só entra no modo proativo com `supports_auth` **e** isto em
+        `True`; como os dois são `False`, não há tentativa de conectar.
+        """
+        return False
 
     @property
     def locale(self) -> str | None:
