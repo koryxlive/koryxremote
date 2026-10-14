@@ -17,7 +17,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    link: KoryxLink = hass.data[DOMAIN][entry.entry_id]
+    link: KoryxLink = hass.data[DOMAIN][entry.entry_id].link
     async_add_entities([KoryxConnectedSensor(entry, link)])
 
 

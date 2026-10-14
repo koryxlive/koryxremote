@@ -20,6 +20,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import CALLBACK_TYPE
 
 from .const import CONF_ALEXA_USER_ID, CONF_API_URL, CONF_CREDENTIAL, CONF_EXPOSED_ENTITIES, CONF_REPORT_STATE
 
@@ -325,3 +326,42 @@ async def async_handle_directive(
         {"directive": directive},
         context=Context(user_id=user_id),
     )
+
+
+async def async_enable_report_state(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> CALLBACK_TYPE | None:
+    """Liga o Report State proativo e devolve o unsubscriber.
+
+    **Por que não basta `should_report_state = True`.** O handler do core para
+    `Alexa.Authorization/AcceptGrant` só chama o `async_enable_proactive_mode`
+    dentro de um `if config.supports_auth:`. A nossa `KoryxAlexaConfig` tem
+    `supports_auth = False` de propósito — o vínculo OAuth é feito pela API, no
+    Account Linking, e o HA não participa dele. O efeito colateral é que o
+    caminho oficial de ligar o modo proativo nunca roda para nós, e o HA fica
+    sem nenhum listener de `EVENT_STATE_CHANGED`.
+
+    Sem listener, nenhum `ChangeReport` sai por mudança de estado. A Alexa só
+    descobre o estado novo quando o usuário abre o app e ela faz uma consulta
+    sob demanda — que é o "delay grande" que o usuário via: a luz apagava na
+    parede e o app só atualizava muito depois.
+
+    Chamamos a `async_enable_proactive_mode` direto aqui, no setup da
+    integração, quando o usuário pediu para reportar estado. Ela é pública e
+    autocontida: valida que dá para obter o token (`async_get_access_token`,
+    que devolve a credencial do agente) e registra o listener. O retorno é o
+    unsubscriber, que guardamos para desligar no unload.
+
+    Import tardio pela mesma razão do `async_handle_directive`: não carregar o
+    componente `alexa` inteiro para quem não usa.
+
+    Devolve `None` quando o report state está desligado nas opções — nada a
+    fazer, e o chamador não precisa saber disso.
+    """
+    if not bool(entry.options.get(CONF_REPORT_STATE, True)):
+        return None
+
+    from homeassistant.components.alexa import state_report
+
+    config = KoryxAlexaConfig(hass, entry)
+    return await state_report.async_enable_proactive_mode(hass, config)  # type: ignore[arg-type]
