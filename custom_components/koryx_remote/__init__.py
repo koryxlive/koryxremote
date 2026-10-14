@@ -14,7 +14,10 @@ PLATFORMS = ["binary_sensor", "sensor"]
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     public_url = entry.data.get(CONF_URL)
     if isinstance(public_url, str) and public_url.startswith("https://"):
-        hass.config.async_update(external_url=public_url)
+        # `async_update` é coroutine: sem o `await` ela nunca roda, a URL
+        # externa não é gravada e o HA loga
+        # "coroutine 'Config.async_update' was never awaited" a cada setup.
+        await hass.config.async_update(external_url=public_url)
     link = KoryxLink(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = link
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
