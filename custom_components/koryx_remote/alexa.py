@@ -41,6 +41,108 @@ _LOGGER = logging.getLogger(__name__)
 _ALEXA_ID_TRANSLATION = dict.fromkeys(map(ord, r"}{\/|\"()[]+~!><*%"), None)
 
 
+def _install_cover_power_override() -> None:
+    """Faz o `powerState` de uma cortina fechada valer `OFF`, não `ON`.
+
+    **O bug.** O `AlexaPowerController` do core deriva `powerState` no ramo
+    genérico como `self.entity.state != STATE_OFF`. Para `cover`, os estados são
+    `open`/`closed`/`opening`/`closing` — **nenhum** é `off` — então `closed`
+    cai em `is_on = True` e o core reporta `powerState = "ON"` com a cortina
+    100% fechada. É o que o usuário vê: fecha a cortina, o HA reflete, e o app
+    da Alexa continua com o toggle "Ativado".
+
+    Pior que o valor errado é não haver evento. Entre `open` e `closed` o
+    `powerState` não muda (ON nos dois) e a lista de propriedades serializadas
+    fica idêntica, então o gate de "significância" do `state_report` descarta a
+    transição e **nenhum** `ChangeReport` sai — a Alexa fica presa no último
+    estado que conhecia.
+
+    **Por que não usar o `should_expose`.** Seria a alavanca mais óbvia (a
+    decisão de visibilidade é nossa), mas ela é o filtro tanto do `Discover`
+    **quanto** do Report State: esconder a entidade fechada faz o listener
+    descartá-la antes de montar o `ChangeReport`, e a Alexa nunca fica sabendo
+    do OFF. Não dá para injetar estado por ali.
+
+    **O que fazemos.** O `ENTITY_ADAPTERS` do core é um `Registry` — um `dict`
+    simples (`homeassistant.util.decorator`) — e a chave de um domínio pode ser
+    trocada. Registramos um `CoverCapabilities` subclassado que troca **só** a
+    interface de energia; `rangeValue`, categoria, `PlaybackController` e
+    `EndpointHealth` continuam os do core.
+
+    **O que muda.** Só o `powerState`: `closed` → `OFF`; qualquer outro estado
+    (`open`, `opening`, `closing`) → `ON`, como antes. Como o valor passa a
+    mudar de verdade entre aberta e fechada, a transição volta a ser
+    significativa e o `ChangeReport` sai.
+
+    Idempotente: reexecutar só reatribui a mesma chave num dict (dois setups,
+    um reload). Não guarda estado global.
+    """
+    from homeassistant.components import cover
+    from homeassistant.components.alexa import capabilities, entities
+    from homeassistant.const import STATE_OFF, EntityStateAttribute
+
+    class _KoryxPowerController(capabilities.AlexaPowerController):
+        """`AlexaPowerController` que entende o vocabulário de `cover`.
+
+        Só o ramo de `cover` é diferente; o resto (`climate`, `fan`, …) fica no
+        `super()`, para não reimplementar o que o core já acerta.
+        """
+
+        def get_property(self, name: str) -> Any:
+            if name != "powerState":
+                return super().get_property(name)
+            # `closed` é o "desligado" da cortina. `STATE_OFF` entra junto por
+            # simetria: o core já trata `cover.state == "off"` como fechado.
+            if self.entity.state in (STATE_OFF, "closed"):
+                return "OFF"
+            return "ON"
+
+    class _KoryxCoverCapabilities(entities.CoverCapabilities):
+        """`CoverCapabilities` com o `powerState` corrigido.
+
+        `interfaces()` é o do core, copiado porque o gen é construído lá e não
+        há hook para trocar uma interface só. A única diferença é o
+        `AlexaPowerController` — as demais linhas são idênticas, para o
+        mapeamento de capacidade continuar sendo o do core.
+        """
+
+        def interfaces(self):
+            device_class = self.entity.attributes.get(EntityStateAttribute.DEVICE_CLASS)
+            if device_class not in (
+                cover.CoverDeviceClass.GARAGE,
+                cover.CoverDeviceClass.GATE,
+            ):
+                yield _KoryxPowerController(self.entity)
+
+            supported = self.entity.attributes.get(
+                EntityStateAttribute.SUPPORTED_FEATURES, 0
+            )
+            if supported & cover.CoverEntityFeature.SET_POSITION:
+                yield capabilities.AlexaRangeController(
+                    self.entity, instance=f"{cover.DOMAIN}.{cover.ATTR_POSITION}"
+                )
+            elif supported & (
+                cover.CoverEntityFeature.CLOSE | cover.CoverEntityFeature.OPEN
+            ):
+                yield capabilities.AlexaModeController(
+                    self.entity, instance=f"{cover.DOMAIN}.{cover.ATTR_POSITION}"
+                )
+            if supported & cover.CoverEntityFeature.SET_TILT_POSITION:
+                yield capabilities.AlexaRangeController(
+                    self.entity, instance=f"{cover.DOMAIN}.tilt"
+                )
+            if supported & (
+                cover.CoverEntityFeature.STOP | cover.CoverEntityFeature.STOP_TILT
+            ):
+                yield capabilities.AlexaPlaybackController(
+                    self.entity, instance=f"{cover.DOMAIN}.stop"
+                )
+            yield capabilities.AlexaEndpointHealth(self.hass, self.entity)
+            yield capabilities.Alexa(self.entity)
+
+    entities.ENTITY_ADAPTERS["cover"] = _KoryxCoverCapabilities
+
+
 class KoryxAlexaConfig:
     """O que o `alexa_smart_home` do core precisa saber sobre esta casa.
 
@@ -358,6 +460,63 @@ async def _async_system_user_id(
     return user.id
 
 
+def _normalize_range_instance(directive: dict[str, Any]) -> None:
+    """Repõe o `instance` que a Alexa omite no `SetRangeValue` de cortina.
+
+    **O bug.** No app, o slider de percentual de uma cortina manda
+    `Alexa.RangeController/SetRangeValue` com o `rangeValue` no payload, mas
+    **sem** a chave `instance` no header. O `AlexaDirective.load_entity` do core
+    só lê `instance` do *header* (`self._directive[API_HEADER]["instance"]`), então
+    ela fica `None`; o `async_api_set_range` compara
+    `instance == f"{COVER_DOMAIN}.{cover.ATTR_POSITION}"`, não casa, cai no
+    `else` e levanta `DIRECTIVE_NOT_SUPPORTED` — "Entity does not support
+    directive". A Alexa mostra "não está respondendo", mesmo o `Discover`
+    anunciando a capability com `"instance": "cover.position"`.
+
+    **Por que a Alexa omite.** A `instance` só é obrigatória quando o endpoint
+    declara **mais de uma** interface daquele tipo (duas `RangeController`, por
+    exemplo). A cortina exposta aqui só tem uma (`cover.position`), então a
+    Alexa pode mandar o directive sem ela — e cabe ao dispositivo resolver a
+    instance pelo contexto. O core não faz esse fallback.
+
+    **O que fazemos.** Só quando o directive é um `SetRangeValue` de
+    `RangeController` **sem** `instance`, e o endpoint é uma entidade `cover`
+    exposta que anuncia `cover.position` (ou seja, tem `SET_POSITION`),
+    injetamos `instance = "cover.position"`. É a mesma string que o
+    `interfaces()` publica e que o handler do core espera. Qualquer outro caso
+    — outra interface, outro domínio, `instance` já presente — passa intocado:
+    a normalização é cirúrgica, no único ponto em que o core e a Alexa
+    discordam.
+
+    Muta o `directive` in place; o `async_handle_directive` o recebe já fora do
+    envelope e o re-embrulha logo em seguida, então a alteração segue junto.
+    """
+    header = directive.get("header")
+    if not isinstance(header, dict):
+        return
+    if header.get("namespace") != "Alexa.RangeController":
+        return
+    if header.get("name") != "SetRangeValue":
+        return
+    if "instance" in header:
+        return
+    endpoint = directive.get("endpoint")
+    if not isinstance(endpoint, dict):
+        return
+    endpoint_id = endpoint.get("endpointId")
+    if not isinstance(endpoint_id, str):
+        return
+    # Só cortina: é o único domínio que anuncia `cover.position` e que sofre
+    # esta omissão. `light`/`climate` mandam a instance (brilho, setpoint) ou
+    # usam outra interface.
+    entity_id = endpoint_id.replace("#", ".")
+    if not entity_id.startswith("cover."):
+        return
+    from homeassistant.components import cover
+
+    header["instance"] = f"{cover.DOMAIN}.{cover.ATTR_POSITION}"
+
+
 async def async_handle_directive(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -384,6 +543,11 @@ async def async_handle_directive(
     from homeassistant.components.alexa import smart_home
 
     from homeassistant.core import Context
+
+    # Antes de entregar ao core: repõe o `instance` que a Alexa omite no
+    # `SetRangeValue` de cortina. Sem isto o core recusa com `INVALID_DIRECTIVE`
+    # e a Alexa mostra "não está respondendo". Ver `_normalize_range_instance`.
+    _normalize_range_instance(directive)
 
     config = KoryxAlexaConfig(hass, entry)
     user_id = await _async_system_user_id(hass, entry)

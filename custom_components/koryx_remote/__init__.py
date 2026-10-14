@@ -37,6 +37,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.config.async_update(external_url=public_url)
     state = _EntryState(link=KoryxLink(hass, entry))
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = state
+
+    # Corrige o `powerState` de `cover`: o core deriva `state != "off"`, e
+    # `closed` não é `off`, então a cortina fechada aparecia como "Ativada" no
+    # app e nenhum `ChangeReport` saía. Troca o adapter de `cover` no registry
+    # do core por um que reporta OFF em `closed`.
+    # Ver `alexa._install_cover_power_override`.
+    from .alexa import _install_cover_power_override
+
+    _install_cover_power_override()
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Report State proativo: o core só liga o listener no `AcceptGrant`, e o
