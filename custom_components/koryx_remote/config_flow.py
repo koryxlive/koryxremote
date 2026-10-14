@@ -9,6 +9,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_PASSWORD
+from homeassistant.helpers import selector
 from homeassistant.helpers.selector import (
     EntityFilterSelectorConfig,
     EntitySelector,
@@ -190,7 +191,14 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
                             multiple=True,
                         )
                     ),
-                    vol.Optional(CONF_REPORT_STATE, default=report_state): bool,
+                    # Selector booleano, não `bool` cru: um campo `bool` puro
+                    # não renderiza o `data_description` nem resolve o rótulo
+                    # de forma confiável no frontend — o campo aparece com a
+                    # chave crua ("report_state"). Ver
+                    # home-assistant/frontend#14164.
+                    vol.Optional(CONF_REPORT_STATE, default=report_state): selector.selector(
+                        {"boolean": {}}
+                    ),
                 }
             ),
         )
