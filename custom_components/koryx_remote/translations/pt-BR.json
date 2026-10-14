@@ -37,7 +37,11 @@
         "title": "Koryx Remote",
         "description": "Escolha quais luzes a Alexa enxerga. Só as marcadas aqui aparecem no app da Alexa.",
         "data": {
-          "exposed_entities": "Luzes para a Alexa"
+          "exposed_entities": "Luzes para a Alexa",
+          "report_state": "Atualizar a Alexa quando a luz mudar sozinha"
+        },
+        "data_description": {
+          "report_state": "Quando ligada, a Alexa é avisada das mudanças feitas na parede ou por automação, e o estado no app fica em dia. Precisa ter a skill revinculada com 'Enviar eventos' ligado no console da Amazon."
         }
       }
     }

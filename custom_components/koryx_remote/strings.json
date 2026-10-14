@@ -37,7 +37,11 @@
         "title": "Koryx Remote",
         "description": "Choose which lights Alexa can see. Only the ones you select here appear in the Alexa app.",
         "data": {
-          "exposed_entities": "Lights for Alexa"
+          "exposed_entities": "Lights for Alexa",
+          "report_state": "Update Alexa when a light changes on its own"
+        },
+        "data_description": {
+          "report_state": "When on, Alexa is notified of changes made at the wall switch or by automation, and the app state stays current. Requires re-linking the skill with 'Send Events' enabled in the Amazon console."
         }
       }
     }

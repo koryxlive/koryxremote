@@ -19,6 +19,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_ALEXA_USER_ID,
     CONF_API_URL,
     CONF_CREDENTIAL,
     CONF_EMAIL,
@@ -26,6 +27,7 @@ from .const import (
     CONF_EXPOSED_ENTITIES,
     CONF_PLAN,
     CONF_RELAY_URL,
+    CONF_REPORT_STATE,
     CONF_SLUG,
     CONF_URL,
     DEFAULT_API_URL,
@@ -149,7 +151,7 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class KoryxRemoteOptionsFlow(OptionsFlow):
-    """Escolha das entidades que a Alexa enxerga.
+    """Escolha das entidades que a Alexa enxerga, e o Report State.
 
     O seletor de entidades do HA (`EntitySelector`) já entrega busca, nome
     amigável e filtro por domínio — a lista vem do registry, não de texto
@@ -163,9 +165,19 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             escolhidas = user_input.get(CONF_EXPOSED_ENTITIES) or []
-            return self.async_create_entry(data={CONF_EXPOSED_ENTITIES: list(escolhidas)})
+            return self.async_create_entry(
+                data={
+                    CONF_EXPOSED_ENTITIES: list(escolhidas),
+                    CONF_REPORT_STATE: bool(user_input.get(CONF_REPORT_STATE)),
+                    # `async_create_entry` substitui TODO o options: sem
+                    # repassar o id do usuário de sistema, salvar esta tela o
+                    # apagaria e a integração criaria outro na próxima directive.
+                    CONF_ALEXA_USER_ID: self.config_entry.options.get(CONF_ALEXA_USER_ID),
+                }
+            )
 
         atuais = self.config_entry.options.get(CONF_EXPOSED_ENTITIES) or []
+        report_state = bool(self.config_entry.options.get(CONF_REPORT_STATE))
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
@@ -178,6 +190,7 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
                             multiple=True,
                         )
                     ),
+                    vol.Optional(CONF_REPORT_STATE, default=report_state): bool,
                 }
             ),
         )

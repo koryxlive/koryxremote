@@ -21,7 +21,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 
-from .const import CONF_ALEXA_USER_ID, CONF_EXPOSED_ENTITIES
+from .const import CONF_ALEXA_USER_ID, CONF_API_URL, CONF_CREDENTIAL, CONF_EXPOSED_ENTITIES, CONF_REPORT_STATE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,6 +66,10 @@ class KoryxAlexaConfig:
         # correspondente no core, que já existe para `switch`/`cover` — basta
         # liberar na seleção quando houver uso.
         self._exposed = set(entry.options.get(CONF_EXPOSED_ENTITIES) or [])
+        # Report State proativo: desligado por padrão. Gera tráfego a cada
+        # mudança de estado reportável, então é opt-in — não imposto a toda
+        # instalação. Ver `docs/report-state.md`.
+        self._report_state = bool(entry.options.get(CONF_REPORT_STATE))
 
     @callback
     def should_expose(self, entity_id: str) -> bool:
@@ -81,16 +85,28 @@ class KoryxAlexaConfig:
     def refresh(self) -> None:
         """Recarrega a seleção depois de mudar na tela de Opções."""
         self._exposed = set(self.entry.options.get(CONF_EXPOSED_ENTITIES) or [])
+        self._report_state = bool(self.entry.options.get(CONF_REPORT_STATE))
 
     @property
     def endpoint(self) -> str | None:
-        """Para onde o HA mandaria Report State, se um dia ligarmos.
+        """Para onde o core manda os eventos proativos (Report State).
 
-        Vazio por enquanto. O `should_report_state` do core só liga com
-        `supports_auth` e token de acesso, então não haverá tentativa de
-        proactive report sem isto preenchido.
+        Não é o event gateway da Amazon: o HA posta aqui, na API do Koryx, que
+        repõe o token da LWA (que o HA nunca vê) e encaminha para
+        `api.amazonalexa.com`. Assim o `client_secret` da Amazon não precisa
+        existir dentro de casa, e a casa (atrás de NAT) não precisa de saída
+        para a Amazon. Ver `docs/report-state.md`.
+
+        Vazio quando o report state não está ligado: o core lê este valor no
+        `set_authorized`, e `None` mantém o modo proativo desligado — que é o
+        estado de quem não optou por ele.
         """
-        return None
+        if not self._report_state:
+            return None
+        api_url = self.entry.data.get(CONF_API_URL)
+        if not isinstance(api_url, str) or not api_url:
+            return None
+        return f"{api_url.rstrip('/')}/api/v1/alexa/events"
 
     @property
     def entity_config(self) -> dict[str, Any]:
@@ -139,18 +155,18 @@ class KoryxAlexaConfig:
 
     @property
     def should_report_state(self) -> bool:
-        """Sem Report State proativo, por enquanto.
+        """Report State proativo, quando o usuário liga e há casa vinculada.
 
-        A Alexa só sabe o estado de uma luz quando pergunta. Se a luz mudar no
-        interruptor da parede, o app da Alexa fica desatualizado até a próxima
-        consulta. Ligar isso exige um `endpoint` de event gateway e token do
-        LWA (a Alexa exige auth para receber eventos) — peça à parte, que não
-        bloqueia o controle por voz.
+        Com isto em `True`, o core registra um listener de mudança de estado e
+        posta um `ChangeReport` em `endpoint` a cada mudança de entidade
+        exposta — é o que faz a Alexa refletir uma luz que mudou na parede.
 
-        O core só entra no modo proativo com `supports_auth` **e** isto em
-        `True`; como os dois são `False`, não há tentativa de conectar.
+        `supports_auth` continua `False` de propósito: o vínculo OAuth é feito
+        pela API no Account Linking, e o HA não participa dele. São coisas
+        separadas — `should_report_state` é "eu quero avisar", `supports_auth`
+        é "eu faço o fluxo de autorização". Aqui só o primeiro é verdadeiro.
         """
-        return False
+        return self._report_state
 
     @property
     def locale(self) -> str | None:
@@ -183,12 +199,25 @@ class KoryxAlexaConfig:
 
     @callback
     def async_invalidate_access_token(self) -> None:
-        """Sem token próprio: a autenticação acontece no túnel, não aqui."""
+        """O core pede um token novo depois de um 401 no envio de evento.
+
+        O token que devolvemos é a credencial do agente, que não expira e não
+        muda. Não há nada a invalidar: se a API recusou (401), foi credencial
+        revogada — só um novo vínculo resolve. Deixar como no-op evita que o
+        core fique tentando em loop com a mesma credencial.
+        """
         return
 
-    async def async_get_access_token(self) -> str | None:
-        """Sem token próprio — a Alexa nunca fala direto com esta casa."""
-        return None
+    async def async_get_access_token(self) -> str:
+        """A credencial do agente, que assina o POST de eventos para a API.
+
+        O core põe isto no `Authorization: Bearer` do POST para `endpoint`.
+        **Não é o token da LWA**: é a mesma credencial `kr_...` que o HA já usa
+        no WebSocket do Relay. A API valida pelo hash e, em nome da conta, repõe
+        o token real da Amazon antes de encaminhar — então o segredo da LWA
+        nunca chega ao HA.
+        """
+        return str(self.entry.data[CONF_CREDENTIAL])
 
     async def async_accept_grant(self, code: str) -> str | None:
         """O grant é aceito pela API no Account Linking, não pelo HA."""

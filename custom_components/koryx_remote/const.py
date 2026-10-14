@@ -22,6 +22,11 @@ CONF_EXPOSED_ENTITIES = "exposed_entities"
 # vez de criar um novo a cada vez. Ver `alexa._async_system_user_id`.
 CONF_ALEXA_USER_ID = "alexa_user_id"
 
+# Report State proativo: o HA avisa a Alexa quando uma luz muda por fora (na
+# parede, por automação). Opt-in — gera tráfego a cada mudança reportável. Ver
+# `docs/report-state.md`.
+CONF_REPORT_STATE = "report_state"
+
 # So luzes por enquanto. Cada dominio novo exige um mapeamento de capacidades
 # proprio no Discovery da Alexa; `switch` e `cover` entram quando houver uso.
 EXPOSABLE_DOMAINS = ("light",)
