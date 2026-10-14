@@ -21,11 +21,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 
-from .const import CONF_EXPOSED_ENTITIES
+from .const import CONF_ALEXA_USER_ID, CONF_EXPOSED_ENTITIES
 
 _LOGGER = logging.getLogger(__name__)
-
-DOMAIN = "koryx_remote"
 
 # Pontuação que a Alexa não aceita em id de endpoint. Cópia da
 # `TRANSLATION_TABLE` do `alexa/entities.py` do core: o `endpointId` que
@@ -206,6 +204,59 @@ class KoryxAlexaConfig:
         return
 
 
+async def _async_system_user_id(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> str | None:
+    """Id do usuário de sistema que assina as ações vindas da Alexa.
+
+    **O contexto precisa de um usuário real do HA, não de um id qualquer.**
+    O `Context.user_id` diz *quem* iniciou a mudança de estado, e o HA usa isso
+    para decidir se aquela mudança é permitida (ver a doc do Context: "The
+    user_id is used for restricting the ability to change the state of your
+    home"). Um `user_id` que não corresponde a um usuário existente **não dá
+    erro**: o `light.turn_on` chega a ser chamado, o HA descarta a alteração e
+    a resposta ainda volta como `Alexa.Response` — o sintoma é a Alexa importar
+    a luz e não conseguir controlá-la.
+
+    Foi exatamente o que aconteceu aqui: passávamos `entry.entry_id`, que não é
+    um usuário — um id que não corresponde a ninguém **não dá erro**: o
+    `light.turn_on` chega a ser chamado e o HA descarta a alteração. Toda luz
+    obedecia sem contexto e ignorava com contexto.
+
+    O Home Assistant Cloud resolve do mesmo jeito (`cloud/prefs.py`):
+    `async_create_system_user(..., group_ids=[GROUP_ID_ADMIN], local_only=True)`.
+    É esse usuário que assina as ações da Alexa/Google, e é ele que reaproveitamos
+    aqui — um único usuário para toda a instalação.
+
+    O id fica em `entry.options` depois de criado: sem isso, cada reload da
+    integração criaria mais um usuário "Koryx Remote" na tela de usuários.
+    """
+    from homeassistant.auth.const import GROUP_ID_ADMIN
+
+    cached = entry.options.get(CONF_ALEXA_USER_ID)
+    if isinstance(cached, str):
+        user = await hass.auth.async_get_user(cached)
+        # O usuário pode ter sido removido à mão; nesse caso criamos outro.
+        if user is not None and user.is_active:
+            return user.id
+
+    try:
+        user = await hass.auth.async_create_system_user(
+            "Koryx Remote",
+            group_ids=[GROUP_ID_ADMIN],
+            local_only=True,
+        )
+    except Exception:  # pragma: no cover - só em HA sem auth
+        _LOGGER.exception("Não consegui criar o usuário de sistema da Alexa")
+        return None
+
+    hass.config_entries.async_update_entry(
+        entry,
+        options={**entry.options, CONF_ALEXA_USER_ID: user.id},
+    )
+    return user.id
+
+
 async def async_handle_directive(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -234,9 +285,10 @@ async def async_handle_directive(
     from homeassistant.core import Context
 
     config = KoryxAlexaConfig(hass, entry)
+    user_id = await _async_system_user_id(hass, entry)
     return await smart_home.async_handle_message(
         hass,
         config,  # type: ignore[arg-type]
         {"directive": directive},
-        context=Context(user_id=entry.entry_id),
+        context=Context(user_id=user_id),
     )

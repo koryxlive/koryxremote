@@ -17,6 +17,11 @@ CONF_ENDS_AT = "ends_at"
 # que o HA trata como mutavel sem reconfigurar a integracao.
 CONF_EXPOSED_ENTITIES = "exposed_entities"
 
+# Id do usuário de sistema que assina as ações vindas da Alexa. Fica em
+# `options` para a integração reaproveitar o mesmo usuário entre reloads, em
+# vez de criar um novo a cada vez. Ver `alexa._async_system_user_id`.
+CONF_ALEXA_USER_ID = "alexa_user_id"
+
 # So luzes por enquanto. Cada dominio novo exige um mapeamento de capacidades
 # proprio no Discovery da Alexa; `switch` e `cover` entram quando houver uso.
 EXPOSABLE_DOMAINS = ("light",)
