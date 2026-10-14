@@ -129,6 +129,15 @@ class KoryxAlexaConfig:
         usuário renomear ou fixar `display_categories` por entidade no
         `configuration.yaml`, e a nossa seleção vive em `entry.options`. Quem
         quiser personalizar tem o HA para isso; a Alexa lê o nome do registry.
+
+        **Nota de escalabilidade (cover):** o core não sabe se um `cover` é
+        persiana, porta ou janela, então classifica todos como `OTHER` — o app
+        da Alexa mostra "Outro". Abrir/fechar por voz funciona (via
+        `RangeController`, instance `cover.position`); é só o rótulo que fica
+        genérico. Melhorar isso é devolver aqui `{entity_id: {"display_categories":
+        "DOOR"}}`, mas exige uma decisão de UI (o usuário escolhendo a categoria
+        na tela de Opções) — por isso fica para uma entrega própria, não como
+        efeito colateral de ampliar domínio.
         """
         return {}
 

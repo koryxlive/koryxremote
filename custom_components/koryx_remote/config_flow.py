@@ -159,8 +159,11 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
     digitado. Isso evita o problema do AMP/MAHM, onde errar o nome exato do
     dispositivo faz ele sumir sem aviso.
 
-    Só `light` por enquanto: cada domínio novo precisa de um mapeamento de
-    capacidades próprio no Discovery da Alexa.
+    O escopo (quais domínios aparecem na escolha) vem de `EXPOSABLE_DOMAINS`,
+    em `const.py` — não é decidido aqui. Cada domínio a mais **não** exige
+    mapeamento de capacidades nesta classe: quem serializa as interfaces da
+    Alexa é o `ENTITY_ADAPTERS` do core, por domínio (`cover` → `SetPosition`,
+    `climate` → `SetTargetTemperature`), e a integração só encaminha.
     """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

@@ -27,6 +27,19 @@ CONF_ALEXA_USER_ID = "alexa_user_id"
 # `docs/report-state.md`.
 CONF_REPORT_STATE = "report_state"
 
-# So luzes por enquanto. Cada dominio novo exige um mapeamento de capacidades
-# proprio no Discovery da Alexa; `switch` e `cover` entram quando houver uso.
-EXPOSABLE_DOMAINS = ("light",)
+# Dominios que a integracao deixa escolher na tela de Opcoes. A lista e a unica
+# fonte de verdade do escopo: o `EntitySelector` do `config_flow` filtra por
+# ela e o `should_expose` aceita o que o usuario marcou.
+#
+# Nao ha mapeamento de capacidades aqui — quem traduz `cover` em `SetPosition`
+# ou `climate` em `SetTargetTemperature` e o `ENTITY_ADAPTERS` do core, por
+# dominio. Ampliar o escopo e acrescentar um nome nesta tupla, nao mexer na
+# logica. Cada dominio novo so precisa entrar aqui e ter texto proprio na tela
+# (o texto e generico de proposposito, para nao mentir quando a selecao mistura
+# luz e cortina).
+#
+# `alarm_control_panel` e `lock` ficam de fora enquanto nao houver decisao de
+# produto: a Alexa pede PIN de voz nesses, e expor sem pensar vira risco.
+# `sensor`/`binary_sensor`/`number` tambem ficam: so reportam, nunca executam,
+# e so poluem o app.
+EXPOSABLE_DOMAINS = ("light", "cover", "climate")
