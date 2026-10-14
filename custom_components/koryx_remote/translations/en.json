@@ -29,15 +29,15 @@
     },
     "abort": {
       "already_configured": "This account is already connected."
-    },
-    "options": {
-      "step": {
-        "init": {
-          "title": "Koryx Remote",
-          "description": "Choose which lights Alexa can see. Only the ones you select here appear in the Alexa app.",
-          "data": {
-            "exposed_entities": "Lights for Alexa"
-          }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Koryx Remote",
+        "description": "Choose which lights Alexa can see. Only the ones you select here appear in the Alexa app.",
+        "data": {
+          "exposed_entities": "Lights for Alexa"
         }
       }
     }

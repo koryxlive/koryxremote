@@ -29,15 +29,15 @@
     },
     "abort": {
       "already_configured": "Esta conta já está ligada."
-    },
-    "options": {
-      "step": {
-        "init": {
-          "title": "Koryx Remote",
-          "description": "Escolha quais luzes a Alexa enxerga. Só as marcadas aqui aparecem no app da Alexa.",
-          "data": {
-            "exposed_entities": "Luzes para a Alexa"
-          }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Koryx Remote",
+        "description": "Escolha quais luzes a Alexa enxerga. Só as marcadas aqui aparecem no app da Alexa.",
+        "data": {
+          "exposed_entities": "Luzes para a Alexa"
         }
       }
     }
