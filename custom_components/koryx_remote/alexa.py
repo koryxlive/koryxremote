@@ -27,6 +27,12 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "koryx_remote"
 
+# Pontuação que a Alexa não aceita em id de endpoint. Cópia da
+# `TRANSLATION_TABLE` do `alexa/entities.py` do core: o `endpointId` que
+# publicamos tem de ser idêntico ao que o HA geraria, senão a referência que a
+# Alexa guardou não casa com a que o core monta ao executar o directive.
+_ALEXA_ID_TRANSLATION = dict.fromkeys(map(ord, r"}{\/|\"()[]+~!><*%"), None)
+
 
 class KoryxAlexaConfig:
     """O que o `alexa_smart_home` do core precisa saber sobre esta casa.
@@ -116,11 +122,12 @@ class KoryxAlexaConfig:
         se mudar, a Alexa perde a referência da luz e o usuário tem de redescobrir
         e reconfigurar o ambiente.
 
-        O core faz `entity_id.replace(".", "#")`, que é o mesmo algoritmo aqui —
-        e é por isso que não vale inventar outro (UUID, hash): o formato é
-        observável pela Alexa e já é o que o HA usa em todo lugar.
+        Mesmo algoritmo do core: `replace(".", "#")` e depois a `TRANSLATION_TABLE`,
+        que apaga a pontuação que a Alexa não aceita em id (`/ \\ " ( ) [ ] + ~ !
+        > < * %`). Sem a segunda parte, uma luz como `light.teto_(sala)` geraria
+        um id diferente do que o HA usa, e a referência não bateria.
         """
-        return entity_id.replace(".", "#")
+        return entity_id.replace(".", "#").translate(_ALEXA_ID_TRANSLATION)
 
     @property
     def supports_auth(self) -> bool:
@@ -149,8 +156,23 @@ class KoryxAlexaConfig:
 
     @property
     def locale(self) -> str | None:
-        """Idioma das respostas. `None` deixa o core usar o padrão (inglês)."""
-        return None
+        """Locale da Alexa. **Não é cosmético: filtra quais capabilities são anunciadas.**
+
+        O `serialize_discovery` do core faz `if locale not in i.supported_locales:
+        continue` para **cada** interface antes de serializá-la. As capabilities
+        declaram locales concretos (`en-US`, `pt-BR`, …) e **nenhuma** contém
+        `None` — então devolver `None` (o default do `AbstractConfig`) descarta
+        todas elas e o `Discover` publica a luz com `capabilities: []`. O
+        resultado é cruel: a Alexa lista o dispositivo e diz que não sabe
+        controlá-lo; nada aponta para cá, porque o Discovery "funcionou".
+
+        `pt-BR` porque o HA desta integração é de casa brasileira e está no
+        conjunto suportado do core. A Alexa aceita o locale do dispositivo e a
+        Alexa API usa `pt-BR` para português do Brasil — devolver `en-US` também
+        funcionaria e anunciaria as mesmas capabilities, mas respostas e nomes
+        de rotina ficariam em inglês.
+        """
+        return "pt-BR"
 
     @callback
     def user_identifier(self) -> str:
