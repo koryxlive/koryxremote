@@ -169,7 +169,14 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
             return self.async_create_entry(
                 data={
                     CONF_EXPOSED_ENTITIES: list(escolhidas),
-                    CONF_REPORT_STATE: bool(user_input.get(CONF_REPORT_STATE)),
+                    # O selector booleano sempre envia a chave; `False` aqui é
+                    # "desmarcado de propósito", não ausência. Sem o `in`,
+                    # um payload sem a chave viraria desmarcado silencioso.
+                    CONF_REPORT_STATE: (
+                        bool(user_input[CONF_REPORT_STATE])
+                        if CONF_REPORT_STATE in user_input
+                        else bool(self.config_entry.options.get(CONF_REPORT_STATE, True))
+                    ),
                     # `async_create_entry` substitui TODO o options: sem
                     # repassar o id do usuário de sistema, salvar esta tela o
                     # apagaria e a integração criaria outro na próxima directive.
@@ -178,7 +185,9 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
             )
 
         atuais = self.config_entry.options.get(CONF_EXPOSED_ENTITIES) or []
-        report_state = bool(self.config_entry.options.get(CONF_REPORT_STATE))
+        # Default `True` para acompanhar o padrão da integração: a caixa já
+        # aparece marcada em quem nunca mexeu na opção.
+        report_state = bool(self.config_entry.options.get(CONF_REPORT_STATE, True))
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(

@@ -66,10 +66,14 @@ class KoryxAlexaConfig:
         # correspondente no core, que já existe para `switch`/`cover` — basta
         # liberar na seleção quando houver uso.
         self._exposed = set(entry.options.get(CONF_EXPOSED_ENTITIES) or [])
-        # Report State proativo: desligado por padrão. Gera tráfego a cada
-        # mudança de estado reportável, então é opt-in — não imposto a toda
-        # instalação. Ver `docs/report-state.md`.
-        self._report_state = bool(entry.options.get(CONF_REPORT_STATE))
+        # Report State proativo: **ligado por padrão**. O custo é baixo e só
+        # existe quando a Alexa já autorizou a casa: o core só entra no modo
+        # proativo depois de um `set_authorized(True)`, que acontece no
+        # primeiro directive. Sem vínculo ativo, `should_report_state` é
+        # verdadeiro mas nenhum listener é registrado — não há tráfego para
+        # quem nunca usou a skill. O usuário pode desligar na tela de Opções.
+        # Ver `docs/report-state.md`.
+        self._report_state = bool(entry.options.get(CONF_REPORT_STATE, True))
 
     @callback
     def should_expose(self, entity_id: str) -> bool:
@@ -85,7 +89,7 @@ class KoryxAlexaConfig:
     def refresh(self) -> None:
         """Recarrega a seleção depois de mudar na tela de Opções."""
         self._exposed = set(self.entry.options.get(CONF_EXPOSED_ENTITIES) or [])
-        self._report_state = bool(self.entry.options.get(CONF_REPORT_STATE))
+        self._report_state = bool(self.entry.options.get(CONF_REPORT_STATE, True))
 
     @property
     def endpoint(self) -> str | None:
