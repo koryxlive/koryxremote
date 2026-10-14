@@ -10,7 +10,7 @@ para o Koryx Remote e devolve a interface original do Home Assistant em
 
 ## Instalação
 
-1. Crie a conta em [koryxremote.com](https://koryxremote.com). O hub [koryx.com.br](https://koryx.com.br) apresenta as plataformas (Live e Remote) e aponta para elas.
+1. Crie a conta em [koryxremote.com](https://koryxremote.com).
 2. No Home Assistant, instale esta integração (HACS ou cópia manual, abaixo).
 3. Reinicie o Home Assistant.
 4. Abra [Instalar no Home Assistant](https://my.home-assistant.io/redirect/config_flow_start/?domain=koryx_remote)

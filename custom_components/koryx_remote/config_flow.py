@@ -7,17 +7,42 @@ from typing import Any
 import aiohttp
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_PASSWORD
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
+from homeassistant.helpers.selector import (
+    EntityFilterSelectorConfig,
+    EntitySelector,
+    EntitySelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
-from .const import CONF_API_URL, CONF_CREDENTIAL, CONF_EMAIL, CONF_ENDS_AT, CONF_PLAN, CONF_RELAY_URL, CONF_SLUG, CONF_URL, DEFAULT_API_URL, DOMAIN
+from .const import (
+    CONF_API_URL,
+    CONF_CREDENTIAL,
+    CONF_EMAIL,
+    CONF_ENDS_AT,
+    CONF_EXPOSED_ENTITIES,
+    CONF_PLAN,
+    CONF_RELAY_URL,
+    CONF_SLUG,
+    CONF_URL,
+    DEFAULT_API_URL,
+    DOMAIN,
+    EXPOSABLE_DOMAINS,
+)
 
 
 class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
     """Um e-mail, uma senha, e a casa fica ligada."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Entrega a tela de escolha das entidades expostas à Alexa."""
+        return KoryxRemoteOptionsFlow()
 
     def __init__(self) -> None:
         self._email = ""
@@ -121,6 +146,41 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def _server_schema(self) -> vol.Schema:
         return vol.Schema({vol.Required(CONF_API_URL, default=DEFAULT_API_URL): str})
+
+
+class KoryxRemoteOptionsFlow(OptionsFlow):
+    """Escolha das entidades que a Alexa enxerga.
+
+    O seletor de entidades do HA (`EntitySelector`) já entrega busca, nome
+    amigável e filtro por domínio — a lista vem do registry, não de texto
+    digitado. Isso evita o problema do AMP/MAHM, onde errar o nome exato do
+    dispositivo faz ele sumir sem aviso.
+
+    Só `light` por enquanto: cada domínio novo precisa de um mapeamento de
+    capacidades próprio no Discovery da Alexa.
+    """
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            escolhidas = user_input.get(CONF_EXPOSED_ENTITIES) or []
+            return self.async_create_entry(data={CONF_EXPOSED_ENTITIES: list(escolhidas)})
+
+        atuais = self.config_entry.options.get(CONF_EXPOSED_ENTITIES) or []
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_EXPOSED_ENTITIES, default=list(atuais)): EntitySelector(
+                        EntitySelectorConfig(
+                            # `domain` vai dentro de `filter`: no topo ele é o
+                            # parâmetro legado, mantido só por compatibilidade.
+                            filter=EntityFilterSelectorConfig(domain=list(EXPOSABLE_DOMAINS)),
+                            multiple=True,
+                        )
+                    ),
+                }
+            ),
+        )
 
 
 class InvalidAuth(Exception):

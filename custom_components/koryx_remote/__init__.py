@@ -25,7 +25,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.async_create_task(link.async_stop())
 
     entry.async_on_unload(_unload)
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Listener de `options`: o HA exige uma coroutine aqui, não uma função.
+
+    O `KoryxAlexaConfig` lê a seleção do `entry.options` a cada directive, então
+    não há cache para invalidar do lado da Alexa — só avisar a API de que a
+    lista mudou.
+    """
+    link: KoryxLink | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if link is not None:
+        await link.notify_entities_changed()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

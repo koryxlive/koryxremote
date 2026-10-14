@@ -11,3 +11,12 @@ CONF_SLUG = "slug"
 CONF_URL = "url"
 CONF_PLAN = "plan"
 CONF_ENDS_AT = "ends_at"
+
+# Entidades que o HA declara para a Alexa. Guardado nas options da entry, e nao
+# em `data`: o que o usuario escolhe depois de configurar pertence a `options`,
+# que o HA trata como mutavel sem reconfigurar a integracao.
+CONF_EXPOSED_ENTITIES = "exposed_entities"
+
+# So luzes por enquanto. Cada dominio novo exige um mapeamento de capacidades
+# proprio no Discovery da Alexa; `switch` e `cover` entram quando houver uso.
+EXPOSABLE_DOMAINS = ("light",)

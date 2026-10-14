@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -12,10 +13,18 @@ from uuid import uuid4
 
 import aiohttp
 
+_LOGGER = logging.getLogger(__name__)
+
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
-from .const import CONF_CREDENTIAL, CONF_ENDS_AT, CONF_PLAN, CONF_RELAY_URL
+from .const import (
+    CONF_CREDENTIAL,
+    CONF_ENDS_AT,
+    CONF_EXPOSED_ENTITIES,
+    CONF_PLAN,
+    CONF_RELAY_URL,
+)
 
 # Nome do plano para mostrar no HA. A chave é o id cru que a API manda; o valor
 # é o que a pessoa lê. Plano que não estiver aqui volta cru, em vez de virar
@@ -159,6 +168,9 @@ class KoryxLink:
             # Handshake: plano e vencimento vêm junto para o sensor não ficar
             # preso ao que foi gravado no login.
             self.update_entitlement(frame.get("plan"), frame.get("endsAt"))
+            # A lista de entidades expostas vai logo depois do AUTH_OK: é o que
+            # alimenta o Discovery da Alexa, e ela muda sem reconectar.
+            await self._send_exposed_entities()
             return True
         if kind == "PONG":
             # A cada PING (~15 s) o Relay reenvia plano/endsAt. Sem isso, uma
@@ -181,6 +193,11 @@ class KoryxLink:
         return authed
 
     async def _on_payload(self, payload: dict[str, Any]) -> None:
+        # Directive da Alexa: processa e devolve a resposta pelo mesmo túnel.
+        # Não tem `streamId`, então precisa vir antes da checagem de stream.
+        if payload.get("kind") == "directive":
+            await self._handle_directive(payload)
+            return
         stream_id = payload.get("streamId")
         if not isinstance(stream_id, str):
             return
@@ -197,6 +214,36 @@ class KoryxLink:
             return
         if kind == "stream_close":
             await self._close_stream(stream_id)
+
+    async def _handle_directive(self, payload: dict[str, Any]) -> None:
+        """Processa um directive da Alexa e devolve a resposta.
+
+        A resposta carrega o `correlationId` que a API mandou: é o que liga a
+        resposta à requisição HTTP que está esperando do outro lado. Sem ele a
+        API não teria como casar as duas pontas, já que o túnel é multiplexado.
+
+        Um erro aqui é respondido como erro da Alexa, nunca engolido: a API
+        está esperando um corpo e um timeout parece "casa fora do ar", que é
+        um diagnóstico pior do que "não consegui".
+        """
+        correlation_id = payload.get("correlationId")
+        request = payload.get("directive")
+        if not isinstance(correlation_id, str) or not isinstance(request, dict):
+            return
+        try:
+            from .alexa import async_handle_directive
+
+            response = await async_handle_directive(self.hass, self.entry, request)
+        except Exception:
+            _LOGGER.exception("Falha ao processar directive da Alexa")
+            response = None
+        await self._send_payload(
+            {
+                "kind": "directive_response",
+                "correlationId": correlation_id,
+                "response": response,
+            }
+        )
 
     async def _open_stream(self, stream_id: str) -> None:
         http = getattr(self.hass, "http", None)
@@ -236,6 +283,36 @@ class KoryxLink:
 
     async def _send_payload(self, payload: dict[str, Any]) -> None:
         await self._send_frame("DATA", json.dumps(payload))
+
+    async def notify_entities_changed(self) -> None:
+        """
+        Reenvia a lista de entidades expostas, se houver conexão.
+
+        Chamado quando o usuário muda a escolha na tela de Opções. Sem isto a
+        nova seleção só valeria na próxima reconexão do túnel — o usuário
+        marcaria uma luz e ela não apareceria na Alexa, o que parece defeito.
+        Se o túnel estiver caído, o `AUTH_OK` da reconexão já reenvia a lista,
+        então não há o que recuperar aqui.
+        """
+        await self._send_exposed_entities()
+
+    async def _send_exposed_entities(self) -> None:
+        """Avisa a API que a seleção de entidades mudou.
+
+        A lista em si não viaja: com o directive cru indo para o HA, quem
+        responde o Discovery é o `alexa_smart_home` do core, lendo a seleção
+        local. O que a API precisa saber é só que existe algo para anunciar —
+        para ela invalidar cache, se um dia tiver.
+
+        O `entityId` de cada escolhida vai junto porque é barato e ajuda o log
+        da API a mostrar o que a casa declarou, sem ser fonte de verdade.
+        """
+        entidades = [
+            entity_id
+            for entity_id in (self.entry.options.get(CONF_EXPOSED_ENTITIES) or [])
+            if isinstance(entity_id, str) and self.hass.states.get(entity_id) is not None
+        ]
+        await self._send_payload({"kind": "entities", "entities": entidades})
 
     async def _send_frame(self, kind: str, data: str | None) -> None:
         ws = self._ws
