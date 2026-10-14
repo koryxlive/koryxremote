@@ -39,6 +39,18 @@ class TrialEnded(Exception):
     """O Relay recusou porque o trial acabou."""
 
 
+def _in_cancellation() -> bool:
+    """Estamos dentro de um `finally` que roda por cancelamento?
+
+    Durante o cancelamento, `await` em I/O é arriscado: o loop pode não
+    resolver o await e o desligamento fica preso. O sinal mais direto é o
+    próprio state da task corrente — `cancelling() > 0` significa que o
+    `CancelledError` foi levantado e ainda estamos processando o `finally`.
+    """
+    task = asyncio.current_task()
+    return task is not None and task.cancelling() > 0
+
+
 class KoryxLink:
     """Uma conexão de saída e um status para o sensor."""
 
@@ -145,7 +157,14 @@ class KoryxLink:
                 finally:
                     ping.cancel()
                     self._ws = None
-                    await self._shutdown_streams()
+                    # Se o `finally` está rodando por causa de um cancelamento
+                    # (shutdown/unload), não podemos dar `await` em rede: o HA
+                    # já está finalizando e o await seguraria o desligamento. O
+                    # `writer.close()` sozinho já libera o socket.
+                    if _in_cancellation():
+                        self._abort_streams()
+                    else:
+                        await self._shutdown_streams()
                     self._set_connected(False)
                     if ws.close_code == 4403:
                         raise TrialEnded
@@ -333,6 +352,19 @@ class KoryxLink:
     async def _shutdown_streams(self) -> None:
         for stream_id in list(self._writers):
             await self._close_stream(stream_id)
+
+    def _abort_streams(self) -> None:
+        """Fecha os writers sem `await`.
+
+        Usado no caminho de cancelamento: `writer.close()` libera o socket na
+        hora e não suspende a task, então o fechamento não segura o shutdown.
+        Não precisa de `wait_closed()` aqui — o processo está terminando e não
+        há mais ninguém esperando o drain.
+        """
+        for stream_id in list(self._writers):
+            writer = self._writers.pop(stream_id, None)
+            if writer is not None:
+                writer.close()
 
     def _set_connected(self, connected: bool) -> None:
         if self.connected == connected:

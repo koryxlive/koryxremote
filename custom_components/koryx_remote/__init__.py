@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import Event, HomeAssistant, callback
 
 from .client import KoryxLink
 from .const import CONF_URL, DOMAIN
@@ -21,13 +22,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     link = KoryxLink(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = link
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    task = hass.async_create_task(link.run())
 
-    def _unload() -> None:
-        task.cancel()
+    # **Background task**, e não `hass.async_create_task`: a task normal (1) é
+    # contada no bootstrap — o HA logava "Setup timed out for bootstrap waiting
+    # on KoryxLink.run()", porque o `run()` só termina quando a casa desliga —
+    # e (2) não é cancelada no shutdown, o que fazia o HA reclamar que a task
+    # "was still running after final writes shutdown stage". A background task
+    # não bloqueia o startup e o HA cancela sozinho no shutdown e no unload.
+    entry.async_create_background_task(hass, link.run(), f"{DOMAIN} link")
+
+    # Parada cooperativa: em vez de depender só do cancelamento, fechamos o
+    # WebSocket quando o HA começa a desligar. O `run()` vê o `_stop` e sai
+    # sozinho, sem ficar preso num `await` de rede durante a finalização.
+    @callback
+    def _stop_on_shutdown(_event: Event) -> None:
         hass.async_create_task(link.async_stop())
 
-    entry.async_on_unload(_unload)
+    entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _stop_on_shutdown))
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
 
