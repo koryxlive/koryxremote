@@ -35,6 +35,7 @@ from .const import (
     DOMAIN,
     EXPOSABLE_DOMAINS,
 )
+from .version import integration_version
 
 
 class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -155,12 +156,21 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
     """Escolha das entidades que a Alexa enxerga, e o Report State.
 
     O seletor de entidades do HA (`EntitySelector`) já entrega busca, nome
-    amigável e filtro por domínio — a lista vem do registry, não de texto
+    amigável e seleção múltipla — a lista vem do registry, não de texto
     digitado. Isso evita o problema do AMP/MAHM, onde errar o nome exato do
     dispositivo faz ele sumir sem aviso.
 
-    O escopo (quais domínios aparecem na escolha) vem de `EXPOSABLE_DOMAINS`,
-    em `const.py` — não é decidido aqui. Cada domínio a mais **não** exige
+    O que ele **não** faz: um filtro por domínio em forma de chips clicáveis.
+    O `filter` do HA só *restringe* a lista (aqui, a light/cover/climate) — não
+    desenha abas. Testado na 0.2.16: `filter` como lista de configs por domínio
+    não muda a UI; continua a lista única. Então quem procura usa a **busca**,
+    que é nativa e suficiente com a lista já limitada a três domínios.
+
+    O `reorder=True` é o ganho real: mantém a ordem de seleção estável entre
+    aberturas, o que importa numa lista que pode passar de uma centena.
+
+    O escopo (quais domínios aparecem) vem de `EXPOSABLE_DOMAINS`, em
+    `const.py` — não é decidido aqui. Cada domínio a mais **não** exige
     mapeamento de capacidades nesta classe: quem serializa as interfaces da
     Alexa é o `ENTITY_ADAPTERS` do core, por domínio (`cover` → `SetPosition`,
     `climate` → `SetTargetTemperature`), e a integração só encaminha.
@@ -199,8 +209,23 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
                         EntitySelectorConfig(
                             # `domain` vai dentro de `filter`: no topo ele é o
                             # parâmetro legado, mantido só por compatibilidade.
+                            #
+                            # Isto **restringe** a lista a light/cover/climate;
+                            # não desenha um filtro clicável. O HA não tem
+                            # seletor com chips por domínio — o `filter` só
+                            # limita o que aparece, em silêncio. Quem procura
+                            # usa o campo de busca do próprio seletor, que é
+                            # nativo. (`filter` aceitar *lista* de configs
+                            # também não muda a UI: vale para exigir "casa com
+                            # pelo menos uma", não para virar abas.)
                             filter=EntityFilterSelectorConfig(domain=list(EXPOSABLE_DOMAINS)),
                             multiple=True,
+                            # Preserva a ordem de seleção. Sem isto, reabrir a
+                            # tela pode reordenar as entidades já escolhidas
+                            # pelo critério do frontend, e uma lista de 100+
+                            # itens que muda de lugar a cada visita parece
+                            # instável.
+                            reorder=True,
                         )
                     ),
                     # Selector booleano, não `bool` cru: um campo `bool` puro
@@ -228,7 +253,7 @@ async def _link(api_url: str, email: str, password: str) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
         f"{api_url}/api/v1/agents/link",
-        json={"email": email, "password": password, "version": "0.1.0"},
+        json={"email": email, "password": password, "version": integration_version()},
     ) as response:
         if response.status == 401:
             raise InvalidAuth

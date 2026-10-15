@@ -25,6 +25,7 @@ from .const import (
     CONF_PLAN,
     CONF_RELAY_URL,
 )
+from .version import integration_version
 
 # Nome do plano para mostrar no HA. A chave é o id cru que a API manda; o valor
 # é o que a pessoa lê. Plano que não estiver aqui volta cru, em vez de virar
@@ -37,6 +38,21 @@ PLAN_LABELS = {
 
 class TrialEnded(Exception):
     """O Relay recusou porque o trial acabou."""
+
+
+class CredentialRejected(Exception):
+    """A credencial gravada na entry nao vale mais (401/403 do Relay).
+
+    O `/agents/link` revoga a credencial anterior a cada login. Um HA que foi
+    pareado antes disso fica com um `kr_` que nao existe mais no banco, e o
+    Relay responde `AUTH_FAILED` (close 4003) em toda tentativa.
+
+    Sem tratar isto, o `run()` reconectava a cada 1 segundo, para sempre, com a
+    MESMA credencial invalida: a casa ficava fora do ar e o Relay enchia o log
+    de tentativas que nunca iam passar. Nao e um erro transitorio — a
+    credencial so muda com uma nova configuracao (reauth), entao insistir nao
+    tem como dar certo.
+    """
 
 
 def _in_cancellation() -> bool:
@@ -116,6 +132,21 @@ class KoryxLink:
             except TrialEnded:
                 self._set_connected(False)
                 delay = 300
+            except CredentialRejected:
+                # Nao adianta tentar de novo: a credencial da entry foi
+                # revogada por um login mais recente. O usuario precisa
+                # reconfigurar a integracao. Sair do laco evita o martelo de
+                # 1 em 1 segundo contra o Relay, e o `_set_connected(False)`
+                # liga o sensor de "Conectado" (a casa esta fora do ar e o HA
+                # precisa dizer isso).
+                self._set_connected(False)
+                _LOGGER.error(
+                    "Koryx Remote: a credencial desta casa foi recusada pelo servidor. "
+                    "Entre no painel Koryx Remote e refaca a instalacao no Home Assistant "
+                    "(Configuracoes > Dispositivos e Servicos > Koryx Remote). "
+                    "O tunel nao sera mais tentado ate a reconfiguracao."
+                )
+                return
             except Exception:
                 self._set_connected(False)
             if self._stop.is_set():
@@ -139,7 +170,7 @@ class KoryxLink:
                 await self._send_frame("HELLO", None)
                 await self._send_frame(
                     "AUTH",
-                    json.dumps({"credential": credential, "version": "0.1.0"}),
+                    json.dumps({"credential": credential, "version": _integration_version()}),
                 )
                 authed = False
                 ping = asyncio.create_task(self._ping(ws))
@@ -168,6 +199,11 @@ class KoryxLink:
                     self._set_connected(False)
                     if ws.close_code == 4403:
                         raise TrialEnded
+                    # 4003 e o AUTH_FAILED do Relay: a credencial da entry foi
+                    # revogada por um login mais recente. Insistir com a mesma
+                    # credencial nunca vai passar — ver `CredentialRejected`.
+                    if ws.close_code == 4003:
+                        raise CredentialRejected
 
     async def _ping(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         while True:
@@ -375,6 +411,16 @@ class KoryxLink:
     def _notify(self) -> None:
         for update in list(self._listeners):
             update()
+
+
+def _integration_version() -> str:
+    """Versao da integracao instalada, lida do `manifest.json`.
+
+    Ver `version.py` para o porquê de existir uma fonte só: antes isto era a
+    string fixa `"0.1.0"`, e o banco registrava `0.1.0` em TODO handshake,
+    inclusive depois de atualizar — o que fazia o diagnostico mentir.
+    """
+    return integration_version()
 
 
 def _parse_datetime(value: Any) -> datetime | None:

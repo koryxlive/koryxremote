@@ -41,6 +41,7 @@
           "report_state": "Update Alexa when a device changes on its own"
         },
         "data_description": {
+          "exposed_entities": "Tap \"Add entity\" and type the name to search. You can select several at once.",
           "report_state": "When on, Alexa is notified of changes made at the wall switch or by automation, and the app state stays current. Requires re-linking the skill with 'Send Events' enabled in the Amazon console."
         }
       }

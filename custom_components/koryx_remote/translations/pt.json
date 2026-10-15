@@ -41,6 +41,7 @@
           "report_state": "Atualizar a Alexa quando um dispositivo mudar sozinho"
         },
         "data_description": {
+          "exposed_entities": "Toque em \"Adicionar entidade\" e digite o nome para buscar. Dá para marcar vários de uma vez.",
           "report_state": "Quando ligada, a Alexa é avisada das mudanças feitas na parede ou por automação, e o estado no app fica em dia. Precisa ter a skill revinculada com 'Enviar eventos' ligado no console da Amazon."
         }
       }

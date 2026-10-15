@@ -47,6 +47,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _install_cover_power_override()
 
+    # Painel da sidebar: a escolha de dispositivos ganha busca e filtro por
+    # domínio, que o formulário nativo do HA não oferece. Ver `panel.py` para
+    # o porquê de existir um painel além do OptionsFlow (os dois leem e
+    # gravam a MESMA `entry.options["exposed_entities"]`).
+    from .panel import async_setup_panel
+
+    await async_setup_panel(hass)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Report State proativo: o core só liga o listener no `AcceptGrant`, e o
@@ -117,4 +125,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        # Só remove o painel quando NÃO sobra entry nenhuma: com duas casas, a
+        # saída de uma não deve apagar o item da sidebar da outra.
+        if not hass.data.get(DOMAIN):
+            from .panel import async_unregister_panel
+
+            async_unregister_panel(hass)
     return unloaded
