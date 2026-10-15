@@ -358,11 +358,6 @@ class KoryxRemotePanel extends LitElement {
         </header>
 
         <div class="bar">
-          <!-- `ha-input`, e nao `ha-textfield`: o HA 2026.10 removeu o
-               `ha-textfield`, e um elemento nao registrado renderiza com
-               altura 0 — o campo de busca existia no DOM e ficava invisivel.
-               Verificado no HA real: `customElements.get('ha-textfield')` e
-               `false`, `ha-input` e `true`. `ha-input` emite `input` igual. -->
           <ha-input
             class="search"
             .value=${this._query}
