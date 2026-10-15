@@ -209,20 +209,29 @@ class KoryxRemotePanel extends LitElement {
   /**
    * Extrai o default de um campo do `data_schema` que o flow devolveu.
    *
-   * O schema vem como lista de dicionários `{vol.Optional(...): selector}`
-   * serializada; o HA coloca o valor atual em `default` no primeiro item do
-   * volume. Procura pela chave pelo nome, sem assumir a posição — a ordem
-   * pode mudar com a versão do core.
+   * O HA serializa o schema de duas formas, dependendo do caminho:
+   *
+   *   A) forma "seletor", que e a que a API HTTP devolve hoje:
+   *      `[{"name": "exposed_entities", "default": [...], "selector": {...}}, ...]`
+   *
+   *   B) forma "voluptuous", com a chave sendo o proprio nome do campo:
+   *      `[{"exposed_entities": {"default": [...], "selector": {...}}}, ...]`
+   *
+   * A versao anterior so entendia a (B). Contra a API real (HA 2026.10.1) o
+   * schema vem na forma (A), entao a busca nunca casava e o painel abria
+   * **sem nada marcado** — mesmo com a selecao gravada e funcionando na Alexa.
+   * Aceitar as duas evita depender de qual caminho serializou.
    */
   _readDefault(flow, key) {
     const schema = flow && flow.data_schema;
     if (!Array.isArray(schema)) return [];
     for (const item of schema) {
-      const vol = item && (item.schema || item);
-      if (!vol || typeof vol !== "object") continue;
+      if (!item || typeof item !== "object") continue;
+      // Forma (A): o nome do campo fica em `name`.
+      if (item.name === key && "default" in item) return item.default || [];
+      // Forma (B): a chave do objeto e o nome do campo.
+      const vol = item.schema || item;
       for (const [k, v] of Object.entries(vol)) {
-        // A chave chega como `exposed_entities` e o valor como
-        // `{selector: {...}, default: [...]}` (ou direto o default).
         if (k !== key) continue;
         if (v && typeof v === "object" && "default" in v) return v.default || [];
         return [];
