@@ -41,7 +41,7 @@
           "report_state": "Update Alexa when a device changes on its own"
         },
         "data_description": {
-          "exposed_entities": "Type part of the name (e.g. \"kitchen\") and click the device in the list that appears — it is added below. Repeat to add more: the list keeps them all, and you can drag to reorder. Typing alone does not add anything.",
+          "exposed_entities": "Tap \"Add entity\", type part of the name and pick the device from the list — one at a time. To mark several at once, use the Koryx Remote panel in the sidebar, which lists every device with a checkbox.",
           "report_state": "When on, Alexa is notified of changes made at the wall switch or by automation, and the app state stays current. Requires re-linking the skill with 'Send Events' enabled in the Amazon console."
         }
       }

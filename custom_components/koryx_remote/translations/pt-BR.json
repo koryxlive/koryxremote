@@ -41,7 +41,7 @@
           "report_state": "Atualizar a Alexa quando um dispositivo mudar sozinho"
         },
         "data_description": {
-          "exposed_entities": "Digite parte do nome (ex.: \"cozinha\") e clique no dispositivo na lista que aparece — ele é adicionado abaixo. Repita para somar mais: a lista guarda todos, e dá para arrastar e reordenar. Só digitar não adiciona nada.",
+          "exposed_entities": "Toque em \"Adicionar entidade\", digite parte do nome e escolha o dispositivo na lista — um de cada vez. Para marcar vários de uma vez, use o painel Koryx Remote na barra lateral, que lista todos com uma caixa de seleção.",
           "report_state": "Quando ligada, a Alexa é avisada das mudanças feitas na parede ou por automação, e o estado no app fica em dia. Precisa ter a skill revinculada com 'Enviar eventos' ligado no console da Amazon."
         }
       }

@@ -211,17 +211,19 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
                             # parâmetro legado, mantido só por compatibilidade.
                             #
                             # Isto **restringe** a lista a light/cover/climate;
-                            # não desenha um filtro clicável. Verificado no HA
-                            # 2026.10.1: com `multiple=True` o core renderiza
-                            # `ha-entities-picker` (lista ordenável + campo de
-                            # busca), e a seleção ACUMULA — cada clique num item
-                            # da lista vira um chip. O texto da tela (`data_description`)
-                            # tem que dizer isso: digitar e clicar, não digitar e
-                            # apertar Enter (que não adiciona nada).
+                            # não desenha um filtro clicável. Verificado na tela
+                            # real (print do usuário, HA 2026.10.1): o core
+                            # desenha o botão "Adicionar entidade" + uma busca
+                            # com a lista de resultados. O fluxo é **um a um** —
+                            # escolher, adicionar, repetir. Não há como marcar
+                            # vários na lista e confirmar de uma vez: isso é
+                            # estrutural do `ha-entities-picker`, não uma opção
+                            # que falte configurar aqui.
                             #
-                            # `filter` aceitar *lista* de configs não muda a UI:
-                            # vale para exigir "casa com pelo menos uma", não
-                            # para virar abas ou chips por domínio.
+                            # Quem tem 100+ dispositivos usa o painel da sidebar
+                            # (`frontend/koryx-remote-panel.js`), que lista tudo
+                            # com checkbox, filtra por domínio e salva de uma vez
+                            # — na mesma `entry.options["exposed_entities"]`.
                             filter=EntityFilterSelectorConfig(domain=list(EXPOSABLE_DOMAINS)),
                             multiple=True,
                             # Preserva a ordem de seleção. Sem isto, reabrir a
