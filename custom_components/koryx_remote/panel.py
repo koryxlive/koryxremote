@@ -57,7 +57,10 @@ WEBCOMPONENT_NAME = "koryx-remote-panel"
 # `frontend_url_path` e o que aparece na URL: `/koryx-remote`.
 FRONTEND_URL_PATH = "koryx-remote"
 
-SIDEBAR_ICON = "mdi:amazon-alexa"
+# `mdi:amazon-alexa` saiu do MDI (icone removido por marca registrada): o
+# painel registrava, mas a sidebar desenhava o item sem icone. `mdi:cast-audio`
+# e generico e continua no set atual.
+SIDEBAR_ICON = "mdi:cast-audio"
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:

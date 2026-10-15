@@ -25,7 +25,7 @@ from .const import (
     CONF_PLAN,
     CONF_RELAY_URL,
 )
-from .version import integration_version
+from .version import async_integration_version
 
 # Nome do plano para mostrar no HA. A chave é o id cru que a API manda; o valor
 # é o que a pessoa lê. Plano que não estiver aqui volta cru, em vez de virar
@@ -168,9 +168,14 @@ class KoryxLink:
             async with session.ws_connect(relay_url, heartbeat=None) as ws:
                 self._ws = ws
                 await self._send_frame("HELLO", None)
+                # `async_...`: este trecho roda no event loop; ler o manifest
+                # de forma sincrona aqui seria bloqueante (aviso do HA).
                 await self._send_frame(
                     "AUTH",
-                    json.dumps({"credential": credential, "version": integration_version()}),
+                    json.dumps({
+                        "credential": credential,
+                        "version": await async_integration_version(self.hass),
+                    }),
                 )
                 authed = False
                 ping = asyncio.create_task(self._ping(ws))

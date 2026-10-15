@@ -35,7 +35,7 @@ from .const import (
     DOMAIN,
     EXPOSABLE_DOMAINS,
 )
-from .version import integration_version
+from .version import async_integration_version
 
 
 class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -75,7 +75,14 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _link_or_ask_server(self, api_url: str, *, from_server: bool = False) -> ConfigFlowResult:
         try:
-            linked = await _link(api_url, self._email, self._password)
+            linked = await _link(
+                api_url,
+                self._email,
+                self._password,
+                # Fora do loop: `_link` roda no event loop e ler o manifest
+                # de forma sincrona aqui seria bloqueante (aviso do HA).
+                await async_integration_version(self.hass),
+            )
         except InvalidAuth:
             return self.async_show_form(
                 step_id="user",
@@ -255,11 +262,11 @@ class AccessEnded(Exception):
     """O acesso terminou: trial vencido ou plano pago sem renovação."""
 
 
-async def _link(api_url: str, email: str, password: str) -> dict[str, Any]:
+async def _link(api_url: str, email: str, password: str, version: str) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=20)
     async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
         f"{api_url}/api/v1/agents/link",
-        json={"email": email, "password": password, "version": integration_version()},
+        json={"email": email, "password": password, "version": version},
     ) as response:
         if response.status == 401:
             raise InvalidAuth

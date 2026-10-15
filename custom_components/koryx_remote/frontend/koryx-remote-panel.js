@@ -142,12 +142,19 @@ class KoryxRemotePanel extends LitElement {
     });
   }
 
-  /** Submete o flow já aberto com os dados; devolve a resposta. */
+  /** Submete o flow já aberto com os dados; devolve a resposta.
+   *
+   * As chaves vao **direto no corpo**, nao dentro de `user_input`. Essa e a
+   * forma que o HA 2026.10 aceita; envolver em `user_input` devolve
+   * `400 {"errors":{"base":["not a valid option at 'user_input'"]}}` e nada
+   * e gravado. Verificado contra a API real do HA 2026.10.1: o mesmo corpo
+   * sem o envelope responde `{"type":"create_entry"}` e grava as options.
+   */
   async _submitFlow(flowId, userInput) {
     return this.hass.callApi(
       "POST",
       `config/config_entries/options/flow/${flowId}`,
-      { user_input: userInput },
+      userInput,
     );
   }
 
@@ -351,14 +358,20 @@ class KoryxRemotePanel extends LitElement {
         </header>
 
         <div class="bar">
-          <ha-textfield
+          <!-- `ha-input`, e nao `ha-textfield`: o HA 2026.10 removeu o
+               `ha-textfield`, e um elemento nao registrado renderiza com
+               altura 0 — o campo de busca existia no DOM e ficava invisivel.
+               Verificado no HA real: `customElements.get('ha-textfield')` e
+               `false`, `ha-input` e `true`. `ha-input` emite `input` igual. -->
+          <ha-input
             class="search"
             .value=${this._query}
-            placeholder=${t.search}
+            .label=${t.search}
+            .placeholder=${t.search}
             @input=${(e) => {
               this._query = e.target.value;
             }}
-          ></ha-textfield>
+          ></ha-input>
           <div class="tabs">
             ${doms.map(
               (d) => html`
@@ -443,6 +456,10 @@ class KoryxRemotePanel extends LitElement {
       }
       .search {
         width: 100%;
+        /* Um custom element do HA nao registrado colapsa para altura 0. A
+           altura minima faz o campo continuar visivel mesmo se o elemento
+           mudar de nome numa proxima versao do HA. */
+        min-height: 56px;
       }
       .tabs {
         display: flex;
