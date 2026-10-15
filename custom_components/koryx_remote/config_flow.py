@@ -211,13 +211,17 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
                             # parâmetro legado, mantido só por compatibilidade.
                             #
                             # Isto **restringe** a lista a light/cover/climate;
-                            # não desenha um filtro clicável. O HA não tem
-                            # seletor com chips por domínio — o `filter` só
-                            # limita o que aparece, em silêncio. Quem procura
-                            # usa o campo de busca do próprio seletor, que é
-                            # nativo. (`filter` aceitar *lista* de configs
-                            # também não muda a UI: vale para exigir "casa com
-                            # pelo menos uma", não para virar abas.)
+                            # não desenha um filtro clicável. Verificado no HA
+                            # 2026.10.1: com `multiple=True` o core renderiza
+                            # `ha-entities-picker` (lista ordenável + campo de
+                            # busca), e a seleção ACUMULA — cada clique num item
+                            # da lista vira um chip. O texto da tela (`data_description`)
+                            # tem que dizer isso: digitar e clicar, não digitar e
+                            # apertar Enter (que não adiciona nada).
+                            #
+                            # `filter` aceitar *lista* de configs não muda a UI:
+                            # vale para exigir "casa com pelo menos uma", não
+                            # para virar abas ou chips por domínio.
                             filter=EntityFilterSelectorConfig(domain=list(EXPOSABLE_DOMAINS)),
                             multiple=True,
                             # Preserva a ordem de seleção. Sem isto, reabrir a
