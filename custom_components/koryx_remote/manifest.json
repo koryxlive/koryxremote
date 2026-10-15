@@ -3,9 +3,13 @@
   "name": "Koryx Remote",
   "codeowners": [],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "panel_custom"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "panel_custom"
+  ],
   "documentation": "https://koryxremote.com",
   "iot_class": "cloud_push",
   "requirements": [],
-  "version": "0.2.17"
+  "version": "0.2.18"
 }
