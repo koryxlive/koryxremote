@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from homeassistant.config_entries import ConfigEntry
@@ -10,6 +11,8 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 
 from .client import KoryxLink
 from .const import CONF_URL, DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["binary_sensor", "sensor"]
 
@@ -51,9 +54,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # domínio, que o formulário nativo do HA não oferece. Ver `panel.py` para
     # o porquê de existir um painel além do OptionsFlow (os dois leem e
     # gravam a MESMA `entry.options["exposed_entities"]`).
+    #
+    # **O painel é opcional, o túnel não.** Este `await` roda antes do link
+    # subir e daqui do `async_setup_entry`, então uma exceção aqui derruba a
+    # entry inteira: o HA mostra "falha ao configurar", a casa fica fora do ar
+    # e o sintoma (`503 AGENT_OFFLINE`) não aponta para o painel. Aconteceu de
+    # verdade na 0.2.18 (barra final no `StaticPathConfig`, `AssertionError`
+    # do aiohttp). Um recurso de conveniência não pode levar o túnel junto.
     from .panel import async_setup_panel
 
-    await async_setup_panel(hass)
+    try:
+        await async_setup_panel(hass)
+    except Exception:  # noqa: BLE001 — ver o comentário acima: nada aqui derruba o túnel
+        _LOGGER.exception(
+            "Koryx Remote: falha ao registrar o painel da sidebar. "
+            "O túnel e os sensores seguem funcionando; a seleção de dispositivos "
+            "continua disponível pelo OptionsFlow."
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

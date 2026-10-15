@@ -38,12 +38,14 @@ _LOGGER = logging.getLogger(__name__)
 # `/api/...`; usar o proprio DOMAIN evita colisao com outra integracao e
 # deixa claro de quem e o arquivo ao olhar a aba de rede do browser.
 #
-# **Com barra final, e nao opcional.** O `web.StaticResource` do aiohttp
-# recebe este valor como `prefix` e so casa rotas que comecem por ele; sem a
-# barra, `/koryx-remote-panel` vira um prefixo que nunca casa com
-# `/koryx-remote-panel/arquivo.js` e o HA cai no catch-all do SPA — que
-# devolve HTML com status 200. O sintoma e cruel: o painel registra, a rota
-# responde, e o navegador tenta executar HTML como JavaScript.
+# **SEM barra final.** O `web.StaticResource` do aiohttp recebe este valor como
+# `prefix`, e o `__init__` do aiohttp tem uma assercao literal contra barra no
+# fim: `assert prefix in ("", "/") or not prefix.endswith("/")`. Com a barra,
+# `async_register_static_paths` estoura `AssertionError`, e como isso roda
+# dentro do `async_setup_entry`, a entry INTEIRA falha ao configurar — o HA
+# mostra "falha ao configurar" e o tunel nem sobe. Foi exatamente o que
+# aconteceu na 0.2.18. O aiohttp normaliza o prefixo sem barra para casar com
+# `/koryx-remote-panel/arquivo.js`, entao a barra nunca foi necessaria.
 PANEL_URL_PATH = f"{DOMAIN}-panel"
 PANEL_JS = "koryx-remote-panel.js"
 
@@ -76,12 +78,11 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     # nos custou tempo antes. O arquivo e pequeno; o custo de rebaixar e
     # menor que o de depurar cache.
     #
-    # A barra final no `url_path` **nao e cosmetica**: e o `prefix` do
-    # `StaticResource` do aiohttp. Sem ela, a rota nao casa e o pedido do
-    # navegador cai no catch-all do SPA (HTML com 200), que o browser tenta
-    # executar como modulo e falha. Ver o comentario de `PANEL_URL_PATH`.
+    # Sem barra final: o aiohttp rejeita `prefix` terminado em `/` com
+    # `AssertionError`, e isso derruba o setup da entry inteira. Ver o
+    # comentario de `PANEL_URL_PATH`.
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(f"/{PANEL_URL_PATH}/", frontend_dir, cache_headers=False)]
+        [StaticPathConfig(f"/{PANEL_URL_PATH}", frontend_dir, cache_headers=False)]
     )
 
     await panel_custom.async_register_panel(

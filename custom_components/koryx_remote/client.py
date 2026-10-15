@@ -170,7 +170,7 @@ class KoryxLink:
                 await self._send_frame("HELLO", None)
                 await self._send_frame(
                     "AUTH",
-                    json.dumps({"credential": credential, "version": _integration_version()}),
+                    json.dumps({"credential": credential, "version": integration_version()}),
                 )
                 authed = False
                 ping = asyncio.create_task(self._ping(ws))
@@ -411,16 +411,6 @@ class KoryxLink:
     def _notify(self) -> None:
         for update in list(self._listeners):
             update()
-
-
-def _integration_version() -> str:
-    """Versao da integracao instalada, lida do `manifest.json`.
-
-    Ver `version.py` para o porquê de existir uma fonte só: antes isto era a
-    string fixa `"0.1.0"`, e o banco registrava `0.1.0` em TODO handshake,
-    inclusive depois de atualizar — o que fazia o diagnostico mentir.
-    """
-    return integration_version()
 
 
 def _parse_datetime(value: Any) -> datetime | None:
