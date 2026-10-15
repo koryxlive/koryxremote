@@ -31,6 +31,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .version import async_integration_version
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,11 +89,26 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         [StaticPathConfig(f"/{PANEL_URL_PATH}", frontend_dir, cache_headers=False)]
     )
 
+    # **A versao entra na query string da URL do modulo.** Sem isto, a URL era
+    # sempre `/koryx_remote-panel/koryx-remote-panel.js`: o navegador e o
+    # service worker do HA (`sw-modern.js`) guardavam o bundle antigo e o
+    # serviam indefinidamente, mesmo depois de publicar uma correcao. Foi
+    # exatamente por isso que o `SyntaxError` da 0.2.22 continuou aparecendo
+    # depois de a 0.2.22 e a 0.2.23 terem sido publicadas — a URL nunca mudava,
+    # entao o cache nunca era invalidado. Com `?v=<versao>`, cada release muda
+    # a URL e o navegador baixa o arquivo novo.
+    #
+    # O `async_register_static_paths` acima serve o caminho **sem** a query
+    # (o aiohttp resolve pelo path, ignorando a query string), entao o mesmo
+    # registro estatico continua valendo — e a URL sem versao tambem segue
+    # respondendo, para nao quebrar quem tem a antiga em cache.
+    versao = await async_integration_version(hass)
+
     await panel_custom.async_register_panel(
         hass,
         webcomponent_name=WEBCOMPONENT_NAME,
         frontend_url_path=FRONTEND_URL_PATH,
-        module_url=f"/{PANEL_URL_PATH}/{PANEL_JS}",
+        module_url=f"/{PANEL_URL_PATH}/{PANEL_JS}?v={versao}",
         sidebar_title="Koryx Remote",
         sidebar_icon=SIDEBAR_ICON,
         # `False` porque e um web component de verdade (Lit), nao um app em
