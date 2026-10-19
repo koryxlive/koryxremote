@@ -3,6 +3,22 @@
 DOMAIN = "koryx_remote"
 DEFAULT_API_URL = "https://koryxremote.com"
 
+# Manifest do repo público do HACS — mesma fonte que o `sync-integration.sh`
+# publica. A integração consulta isto antes do `/ha/version` da API.
+GITHUB_MANIFEST_URL = (
+    "https://raw.githubusercontent.com/koryxlive/koryxremote/main/"
+    "custom_components/koryx_remote/manifest.json"
+)
+
+# Intervalo do check de versão (sensor + update + push). 12 h basta: release
+# não é contínua, e evita bater no GitHub/API a cada minuto.
+UPDATE_CHECK_HOURS = 12
+
+# Última versão para a qual já criamos a persistent_notification. Em
+# `entry.data` para sobreviver a restart sem repetir o push.
+CONF_UPDATE_NOTIFIED = "update_notified_version"
+
+
 # Fabricante do dispositivo no device registry. Um nome proprio, e nao o de uma
 # marca que ja exista no catalogo de marcas do HA: o dispositivo herda o icone
 # do fabricante, e usar "Home Assistant" faria o dispositivo do usuario exibir

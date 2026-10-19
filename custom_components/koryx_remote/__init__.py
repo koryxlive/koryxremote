@@ -11,10 +11,11 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 
 from .client import KoryxLink
 from .const import CONF_URL, DOMAIN
+from .update_check import KoryxUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["binary_sensor", "sensor"]
+PLATFORMS = ["binary_sensor", "sensor", "update"]
 
 
 @dataclass
@@ -28,6 +29,7 @@ class _EntryState:
     """
 
     link: KoryxLink
+    update_coordinator: KoryxUpdateCoordinator
     report_state_unsub: CALLBACK_TYPE | None = field(default=None)
 
 
@@ -38,8 +40,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # externa não é gravada e o HA loga
         # "coroutine 'Config.async_update' was never awaited" a cada setup.
         await hass.config.async_update(external_url=public_url)
-    state = _EntryState(link=KoryxLink(hass, entry))
+    coordinator = KoryxUpdateCoordinator(hass, entry)
+    state = _EntryState(link=KoryxLink(hass, entry), update_coordinator=coordinator)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = state
+    # Primeira leitura antes das plataformas. Só `async_refresh`: se
+    # GitHub/API falharem, a entry sobe mesmo assim — o túnel não depende
+    # do check de versão (first_refresh em falha marcaria a entry not ready).
+    await coordinator.async_refresh()
 
     # Corrige o `powerState` de `cover`: o core deriva `state != "off"`, e
     # `closed` não é `off`, então a cortina fechada aparecia como "Ativada" no

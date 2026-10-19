@@ -17,12 +17,14 @@ from datetime import UTC, datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .client import KoryxLink
 from .const import CONF_URL, DOMAIN, MANUFACTURER
+from .update_check import KoryxUpdateCoordinator, UpdateInfo
 
 
 async def async_setup_entry(
@@ -30,8 +32,14 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    link: KoryxLink = hass.data[DOMAIN][entry.entry_id].link
-    async_add_entities([KoryxPlanSensor(entry, link), KoryxExpirySensor(entry, link)])
+    state = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities(
+        [
+            KoryxPlanSensor(entry, state.link),
+            KoryxExpirySensor(entry, state.link),
+            KoryxVersionSensor(entry, state.update_coordinator),
+        ]
+    )
 
 
 class KoryxBaseSensor(SensorEntity):
@@ -126,3 +134,49 @@ class KoryxExpirySensor(KoryxBaseSensor):
         status = "active" if seconds > 0 else "expired"
         days = max(0, -(-int(seconds) // 86_400)) if seconds > 0 else 0
         return {**base, "status": status, "days_remaining": days}
+
+
+class KoryxVersionSensor(CoordinatorEntity[KoryxUpdateCoordinator], SensorEntity):
+    """Versão instalada, com a publicada nos atributos (para automação).
+
+    O cartão visual de update é o `update.koryx_remote_*`. Este sensor existe
+    para quem quer template/automação sem parsear a entidade update — estado =
+    instalada; `latest_version` / `update_available` nos atributos.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Versão"
+    _attr_icon = "mdi:package-variant"
+
+    def __init__(self, entry: ConfigEntry, coordinator: KoryxUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_version"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Koryx Remote",
+            manufacturer=MANUFACTURER,
+            configuration_url=str(entry.data.get(CONF_URL) or ""),
+        )
+
+    @property
+    def _info(self) -> UpdateInfo | None:
+        return self.coordinator.data
+
+    @property
+    def native_value(self) -> str | None:
+        return self._info.installed if self._info else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | bool | None]:
+        info = self._info
+        if info is None:
+            return {"latest_version": None, "update_available": False, "release_url": None}
+        return {
+            "latest_version": info.latest,
+            "update_available": info.available,
+            "release_url": info.release_url,
+        }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
