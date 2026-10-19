@@ -2,5 +2,6 @@
   "name": "Koryx Remote",
   "render_readme": true,
   "homeassistant": "2026.3.0",
+  "content_in_root": false,
   "zip_release": false
 }

@@ -22,7 +22,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import KoryxLink
-from .const import CONF_URL, DOMAIN
+from .const import CONF_URL, DOMAIN, MANUFACTURER
 
 
 async def async_setup_entry(
@@ -47,6 +47,7 @@ class KoryxBaseSensor(SensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="Koryx Remote",
+            manufacturer=MANUFACTURER,
             configuration_url=str(entry.data.get(CONF_URL) or ""),
         )
 

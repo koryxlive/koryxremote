@@ -3,6 +3,13 @@
 DOMAIN = "koryx_remote"
 DEFAULT_API_URL = "https://koryxremote.com"
 
+# Fabricante do dispositivo no device registry. Um nome proprio, e nao o de uma
+# marca que ja exista no catalogo de marcas do HA: o dispositivo herda o icone
+# do fabricante, e usar "Home Assistant" faria o dispositivo do usuario exibir
+# o logo do HA. Sem entrada no catalogo, o HA cai no icone da integracao, que
+# desde a 2026.3 e o local (`brand/icon.png`).
+MANUFACTURER = "Koryx"
+
 CONF_API_URL = "api_url"
 CONF_EMAIL = "email"
 CONF_CREDENTIAL = "credential"
