@@ -35,6 +35,13 @@ PLAN_LABELS = {
     "basic": "Básico",
 }
 
+# Espelha `DEFAULTS.heartbeatIntervalMs`/`heartbeatDeadlineMs` de
+# `packages/config`. Prazo = 3x o intervalo: duas batidas perdidas são
+# toleráveis, três não. Mudar aqui sem mexer no Relay (ou vice-versa) deixa um
+# dos lados derrubando conexão que o outro considera saudável.
+PING_INTERVAL_SECONDS = 15
+PING_DEADLINE_SECONDS = 45
+
 
 class TrialEnded(Exception):
     """O Relay recusou porque o trial acabou."""
@@ -211,10 +218,34 @@ class KoryxLink:
                         raise CredentialRejected
 
     async def _ping(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+        """Manda PING a cada 15 s e derruba a conexão se o Relay calar.
+
+        O PING sozinho não prova nada: `ws.send_str` num socket meio-aberto
+        devolve sucesso e o Agent fica achando que está online. O prazo é o
+        que fecha a conexão, e o `run()` reconecta — com backoff.
+
+        O `async for` do `_connect_once` só termina quando o socket fecha, então
+        `ws.close()` aqui basta para acordar a leitura e cair no `finally`.
+        """
+        loop = asyncio.get_running_loop()
+        last_ping = loop.time()
         while True:
-            await asyncio.sleep(15)
+            await asyncio.sleep(PING_INTERVAL_SECONDS)
             if ws.closed:
                 return
+            if loop.time() - last_ping > PING_DEADLINE_SECONDS:
+                _LOGGER.warning(
+                    "Koryx Remote: Relay sem resposta há %ss; reconectando",
+                    PING_DEADLINE_SECONDS,
+                )
+                # 4008 = HEARTBEAT_TIMEOUT no Relay, o mesmo código que ele usa
+                # ao derrubar o Agent. Não cria caminho novo no HA: é uma
+                # conexão que caiu, e o `run()` reconecta com backoff.
+                await ws.close(code=4008, message=b"HEARTBEAT_TIMEOUT")
+                return
+            # Zera o prazo antes do envio: o que vale é o tempo desde o último
+            # PONG, não desde o PING que acabou de sair.
+            last_ping = loop.time()
             await self._send_frame("PING", None)
 
     async def _on_message(self, raw: str, authed: bool) -> bool:

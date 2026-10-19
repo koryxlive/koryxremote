@@ -51,6 +51,14 @@ CONF_REPORT_STATE = "report_state"
 # e so poluem o app.
 EXPOSABLE_DOMAINS = ("light", "cover", "climate")
 
+# Prefixo do icone da marca na sidebar. O HA nao aceita imagem em `sidebar_icon`
+# de `panel_custom` (o `frontend.Panel` guarda so uma string MDI e a sidebar
+# resolve via `<ha-icon>`), entao a marca entra pelo registro `window.customIcons`
+# que o proprio `<ha-icon>` consulta para prefixos fora do MDI. O prefixo precisa
+# ser unico para nao colidir com conjunto de icones de terceiros; o nome segue
+# `koryx_remote` e nao `koryx`, que o Live pode querer usar.
+CUSTOM_ICON_PREFIX = "koryx_remote"
+
 # Categoria da Alexa por `device_class` de `cover`. O core ja faz esse mapa em
 # `CoverCapabilities.default_display_categories`, mas **so quando a entidade
 # declara `device_class`**: sem ele, cai em `OTHER` e o app mostra "Outro".

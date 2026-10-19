@@ -30,7 +30,7 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import CUSTOM_ICON_PREFIX, DOMAIN
 from .version import async_integration_version
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,6 +50,12 @@ _LOGGER = logging.getLogger(__name__)
 PANEL_URL_PATH = f"{DOMAIN}-panel"
 PANEL_JS = "koryx-remote-panel.js"
 
+# Modulo que registra o K da marca em `window.customIcons`. Fica separado do
+# bundle do painel porque a sidebar desenha o icone ao carregar o HA, antes de
+# o usuario navegar para `/koryx-remote`; carregar o painel inteiro so para
+# isso seria pior (e o `panel_custom` so carrega o modulo na rota dele).
+ICONS_JS = "koryx-icons.js"
+
 # `webcomponent_name` precisa bater **exatamente** com o nome passado ao
 # `customElements.define()` la no JS. Se divergir, o painel registra mas o
 # frontend nao acha o elemento e a pagina fica em branco — sem erro obvio.
@@ -58,10 +64,46 @@ WEBCOMPONENT_NAME = "koryx-remote-panel"
 # `frontend_url_path` e o que aparece na URL: `/koryx-remote`.
 FRONTEND_URL_PATH = "koryx-remote"
 
-# `mdi:amazon-alexa` saiu do MDI (icone removido por marca registrada): o
-# painel registrava, mas a sidebar desenhava o item sem icone. `mdi:cast-audio`
-# e generico e continua no set atual.
-SIDEBAR_ICON = "mdi:cast-audio"
+# Icone da sidebar: a marca da Koryx, e nao um `mdi:`.
+#
+# O HA NUNCA aceita imagem aqui — `frontend.Panel.sidebar_icon` e uma string e
+# a sidebar resolve com `<ha-icon>`. O caminho estavel e o registro de icones
+# customizados do frontend: `koryx_remote:k` (ver `frontend/koryx-icons.js`).
+# O prefixo precisa bater com o que aquele arquivo registra em
+# `window.customIcons`; divergir deixa o item da sidebar SEM icone, sem erro.
+#
+# Historico: `mdi:amazon-alexa` saiu do MDI e o item aparecia vazio; foi trocado
+# por `mdi:cast-audio`, que e generico e nao comunica a marca. O K cobre os dois.
+SIDEBAR_ICON = f"{CUSTOM_ICON_PREFIX}:k"
+
+
+async def async_register_frontend_icon(hass: HomeAssistant) -> None:
+    """Injeta o modulo que registra o K em `window.customIcons`.
+
+    Idempotente pelo mesmo motivo do painel (duas entries, dois registros). O
+    marcador e separado do painel: o painel pode falhar (e o `__init__` engole)
+    sem levar o icone junto, e vice-versa.
+
+    `frontend.add_extra_js_url` e **sincrono** e exige a chave `DATA_EXTRA_MODULE_URL`
+    ja criada no `hass.data` — ela nasce no setup do componente `frontend`, que a
+    integracao declara em `dependencies`. Se o componente nao estiver de pe, o
+    `KeyError` sobe e o `__init__` o registra como falha do painel, sem derrubar
+    o tunel.
+    """
+    if hass.data.get(f"{DOMAIN}_icons_registered"):
+        return
+    hass.data[f"{DOMAIN}_icons_registered"] = True
+
+    # Mesmo motivo do `?v=` do painel: a URL do modulo precisa mudar a cada
+    # release, senao o service worker do HA serve o JS antigo indefinidamente.
+    # `cache_headers=False` no registro estatico nao basta — a URL e que fica
+    # presa no cache do navegador.
+    versao = await async_integration_version(hass)
+    URL_ICONES = f"/{PANEL_URL_PATH}/{ICONS_JS}?v={versao}"
+    frontend.add_extra_js_url(hass, URL_ICONES)
+    # Guardado para o unload remover a URL exata (com a versao): remover sem a
+    # versao nao casaria e o modulo seguiria sendo carregado depois do unload.
+    hass.data[f"{DOMAIN}_icons_url"] = URL_ICONES
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
@@ -102,6 +144,13 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     # (o aiohttp resolve pelo path, ignorando a query string), entao o mesmo
     # registro estatico continua valendo — e a URL sem versao tambem segue
     # respondendo, para nao quebrar quem tem a antiga em cache.
+    #
+    # `config_panel_domain=DOMAIN` faz o painel aparecer tambem como aba
+    # dentro de Configuracoes -> Dispositivos e servicos -> Koryx Remote. E o
+    # caminho suportado para painel de integracao e o mesmo que o `panel_custom`
+    # do core usa quando chamado com esse argumento (`HA >= 2026.3`); em HA
+    # mais antigo o argumento e ignorado, e o painel segue so na sidebar.
+    await async_register_frontend_icon(hass)
     versao = await async_integration_version(hass)
 
     await panel_custom.async_register_panel(
@@ -116,6 +165,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         # resto da UI e o tema claro/escuro vale sozinho.
         embed_iframe=False,
         require_admin=False,
+        config_panel_domain=DOMAIN,
     )
     _LOGGER.debug("painel %s registrado em /%s", WEBCOMPONENT_NAME, FRONTEND_URL_PATH)
 
@@ -125,7 +175,21 @@ def async_unregister_panel(hass: HomeAssistant) -> None:
 
     Sem isto, desligar a integracao deixaria um item quebrado na sidebar:
     o HA mantem o registro do painel mesmo depois do unload da entry.
+
+    Tambem tira a URL do modulo do K de `extra_js_url`. Ela e injetada no HTML
+    do HA a cada carregamento; deixar registrada faria o navegador buscar um
+    arquivo de uma integracao desinstalada (`404` no console) e, pior, o
+    icone continuaria "existindo" na sidebar para um painel removido.
     """
+    url_icones = hass.data.pop(f"{DOMAIN}_icons_url", None)
+    if url_icones is not None:
+        try:
+            frontend.remove_extra_js_url(hass, url_icones)
+        except KeyError:
+            # Nunca foi registrada (falha no setup do icone). Nao e erro.
+            pass
+    hass.data.pop(f"{DOMAIN}_icons_registered", None)
+
     if not hass.data.pop(f"{DOMAIN}_panel_registered", None):
         return
     try:
