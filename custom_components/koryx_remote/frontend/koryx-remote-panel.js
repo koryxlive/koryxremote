@@ -32,6 +32,78 @@ const DOMAIN_LABELS = {
   climate: { pt: "Clima", en: "Climate", icon: "mdi:thermostat" },
 };
 
+/**
+ * Logo da Koryx no header do painel.
+ *
+ * Por que inline e nao o arquivo de `brand/`
+ * -----------------------------------------
+ * Nenhum asset da marca serve nos dois temas: `koryx-logo.svg` e
+ * `koryx-logo.png` trazem fundo **preto**, e `koryx-logo-transparent.png` tem o
+ * texto em **branco** — no tema claro o "Koryx" some. Aqui o K fica colorido
+ * (gradiente da marca) e o texto usa `currentColor`, entao acompanha o tema
+ * sem precisar de dois arquivos nem de `<img>` com troca por `prefers-color`.
+ *
+ * O K e o mesmo `d` de `koryx-icons.js` (tres subpaths do
+ * `brand/logo-k-transparent.svg`); o teste da sidebar compara com o SVG, entao
+ * divergencia aparece la. O gradiente funciona aqui porque e SVG real no DOM,
+ * nao o `path` que o `ha-svg-icon` recebe.
+ *
+ * Geometria
+ * ---------
+ * O SVG da marca (`brand/koryx-logo.svg`) tem o K reduzido por `scale()` e o
+ * texto fora do grupo escalado — sistemas de coordenadas diferentes. Aqui o
+ * fundo nao existe: cada parte precisa caber no viewBox pelo tamanho real.
+ * O K (~342x342) com `scale(0.22)` fica ~75 unidades, alinhado ao "Koryx" de
+ * 44px; o `x` do texto e medido no espaco final.
+ *
+ * O id do gradiente leva o prefixo `koryx-panel-` para nao colidir com outros
+ * `<linearGradient>` na mesma pagina (o painel convive com o resto do HA).
+ */
+const LOGO_VIEW_BOX = "0 0 300 86";
+const LOGO_K_PATH =
+  "M 337 59 L 214 59 L 6 268 L 4 335 L 64 335 Z " +
+  "M 4 4 L 6 235 L 93 147 L 94 96 Z " +
+  "M 158 273 L 217 335 L 338 336 L 221 214 Z";
+const LOGO_K_SCALE = 0.22;
+const LOGO_TEXT_X = 86;
+
+const renderLogo = () => html`
+  <svg
+    class="logo"
+    viewBox=${LOGO_VIEW_BOX}
+    role="img"
+    aria-label="Koryx Remote"
+  >
+    <defs>
+      <linearGradient id="koryx-panel-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#18BCF2"></stop>
+        <stop offset="55%" stop-color="#03A9F4"></stop>
+        <stop offset="100%" stop-color="#009AC7"></stop>
+      </linearGradient>
+    </defs>
+    <g transform="translate(2,4) scale(${LOGO_K_SCALE})">
+      <path d=${LOGO_K_PATH} fill="url(#koryx-panel-gradient)"></path>
+    </g>
+    <text
+      x=${LOGO_TEXT_X}
+      y="46"
+      fill="currentColor"
+      font-family="Montserrat, Roboto, Arial, sans-serif"
+      font-size="44"
+      font-weight="800"
+    >Koryx</text>
+    <text
+      x=${LOGO_TEXT_X + 2}
+      y="70"
+      fill="url(#koryx-panel-gradient)"
+      font-family="Roboto, Arial, sans-serif"
+      font-size="16"
+      textLength="64"
+      lengthAdjust="spacing"
+    >remote</text>
+  </svg>
+`;
+
 const STRINGS = {
   pt: {
     title: "Dispositivos para a Alexa",
@@ -362,8 +434,11 @@ class KoryxRemotePanel extends LitElement {
     return html`
       <div class="wrap">
         <header>
-          <h1>${t.title}</h1>
-          <p class="sub">${t.subtitle}</p>
+          ${renderLogo()}
+          <div class="titles">
+            <h1>${t.title}</h1>
+            <p class="sub">${t.subtitle}</p>
+          </div>
         </header>
 
         <div class="bar">
@@ -445,13 +520,39 @@ class KoryxRemotePanel extends LitElement {
         max-width: 720px;
         margin: 0 auto;
       }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .logo {
+        /* Largura fixa e altura pela proporcao do viewBox: o logo nao
+           pode encolher quando o titulo quebra em duas linhas. */
+        width: 150px;
+        height: auto;
+        flex: 0 0 auto;
+        overflow: visible;
+      }
+      .titles {
+        min-width: 0;
+      }
       h1 {
         font-size: 1.5rem;
         margin: 0;
       }
       .sub {
         color: var(--secondary-text-color);
-        margin: 4px 0 16px;
+        margin: 4px 0 0;
+      }
+      /* Em tela estreita o logo e o titulo nao cabem lado a lado: o logo
+         vai para cima e o bloco de texto ocupa a largura toda. */
+      @media (max-width: 480px) {
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 8px;
+        }
       }
       .bar {
         display: flex;
