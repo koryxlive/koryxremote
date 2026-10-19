@@ -9,13 +9,29 @@
  *
  *   1. prefixo MDI (`mdi:`), via o set de icones;
  *   2. prefixo registrado em `window.customIcons`, via `getIcon(name)`;
- *   3. nada conhecido: cai em `<iron-icon>` (legado).
+ *   3. nada conhecido: cai em `<iron-icon>` (legado) e **nao tenta de novo**.
  *
  * O passo 2 e o mesmo caminho que o HACS usa para o proprio logo e e API
  * publica do frontend (`src/data/custom_icons.ts`). Registrar aqui mantem o
  * painel como web component direto (`embed_iframe=False`), com o `hass`
  * compartilhado — o resto do painel (`hass.callWS`, `hass.callApi`,
  * `hass.language`) segue funcionando sem mudanca.
+ *
+ * Race com a sidebar (icone some as vezes)
+ * ----------------------------------------
+ * `frontend.add_extra_js_url` injeta este modulo de forma **assincrona**. A
+ * sidebar pode pintar o `<ha-icon icon="koryx_remote:k">` **antes** de este
+ * arquivo rodar. Nesse caso o `ha-icon` nao acha o prefixo em `customIcons`,
+ * seta `_legacy = true` e renderiza `<iron-icon>` (vazio). Depois que o
+ * registro chega, o elemento **nao re-consulta** — so chama `_loadIcon` de
+ * novo se a propriedade `icon` mudar. Por isso o K some em alguns reloads e
+ * volta em outros: e timing, nao cache quebrado.
+ *
+ * Mitigacao: depois de registrar, percorre o DOM (incluindo shadow roots) e
+ * forca os `ha-icon` do nosso prefixo a carregar de novo — limpando `_legacy`
+ * (senao o render continua no iron-icon mesmo com `_path` preenchido) e
+ * reatribuindo `icon`. Retries curtos cobrem a sidebar que monta um pouco
+ * depois do modulo.
  *
  * O contrato do `path` — e o bug da 0.2.27
  * ----------------------------------------
@@ -43,6 +59,7 @@
  */
 
 const PREFIX = "koryx_remote";
+const ICON_PREFIX = PREFIX + ":";
 
 // Um `d` unico com os tres subpaths do K (o tubo diagonal, a haste e o pe).
 // Ordem igual ao SVG: se mudar, o teste de paths acusa.
@@ -72,3 +89,47 @@ customIconsWindow.customIcons[PREFIX] = {
     return { path: K_PATH, viewBox: VIEW_BOX };
   },
 };
+
+/**
+ * Forca `<ha-icon>` do nosso prefixo a sair do modo legado e recarregar.
+ *
+ * Precisa limpar `_legacy`: o `_loadIcon` do HA, ao achar o prefixo em
+ * `customIcons`, preenche `_path` mas **nao** zera `_legacy`. Sem isso o
+ * render continua no `<iron-icon>` vazio mesmo com o path certo.
+ */
+function reviveHaIcon(el) {
+  const icon = el.icon || el.getAttribute?.("icon");
+  if (!icon || !String(icon).startsWith(ICON_PREFIX)) {
+    return;
+  }
+  // Campo privado do Lit no frontend do HA; sem isto o revive nao pinta.
+  el._legacy = false;
+  el.icon = "";
+  el.icon = icon;
+}
+
+function walkShadow(root, visit) {
+  if (!root || !root.querySelectorAll) {
+    return;
+  }
+  root.querySelectorAll("ha-icon").forEach(visit);
+  root.querySelectorAll("*").forEach((node) => {
+    if (node.shadowRoot) {
+      walkShadow(node.shadowRoot, visit);
+    }
+  });
+}
+
+function refreshSidebarIcons() {
+  // O teste Node executa este arquivo sem `document`.
+  if (typeof document === "undefined") {
+    return;
+  }
+  walkShadow(document, reviveHaIcon);
+}
+
+refreshSidebarIcons();
+// Sidebar pode montar depois do modulo: retries curtos cobrem o race tipico.
+[50, 200, 500, 1000, 2000].forEach((ms) => {
+  setTimeout(refreshSidebarIcons, ms);
+});
