@@ -168,10 +168,10 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
     dispositivo faz ele sumir sem aviso.
 
     O que ele **não** faz: um filtro por domínio em forma de chips clicáveis.
-    O `filter` do HA só *restringe* a lista (aqui, a light/cover/climate) — não
+    O `filter` do HA só *restringe* a lista (aos `EXPOSABLE_DOMAINS`) — não
     desenha abas. Testado na 0.2.16: `filter` como lista de configs por domínio
     não muda a UI; continua a lista única. Então quem procura usa a **busca**,
-    que é nativa e suficiente com a lista já limitada a três domínios.
+    que é nativa e suficiente com a lista já limitada aos domínios expostos.
 
     O `reorder=True` é o ganho real: mantém a ordem de seleção estável entre
     aberturas, o que importa numa lista que pode passar de uma centena.
@@ -217,7 +217,7 @@ class KoryxRemoteOptionsFlow(OptionsFlow):
                             # `domain` vai dentro de `filter`: no topo ele é o
                             # parâmetro legado, mantido só por compatibilidade.
                             #
-                            # Isto **restringe** a lista a light/cover/climate;
+                            # Isto **restringe** a lista aos `EXPOSABLE_DOMAINS`;
                             # não desenha um filtro clicável. Verificado na tela
                             # real (print do usuário, HA 2026.10.1): o core
                             # desenha o botão "Adicionar entidade" + uma busca

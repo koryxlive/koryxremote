@@ -461,32 +461,29 @@ async def _async_system_user_id(
 
 
 def _normalize_range_instance(directive: dict[str, Any]) -> None:
-    """Repõe o `instance` que a Alexa omite no `SetRangeValue` de cortina.
+    """Repõe o `instance` que a Alexa omite no `SetRangeValue` de range único.
 
-    **O bug.** No app, o slider de percentual de uma cortina manda
-    `Alexa.RangeController/SetRangeValue` com o `rangeValue` no payload, mas
-    **sem** a chave `instance` no header. O `AlexaDirective.load_entity` do core
-    só lê `instance` do *header* (`self._directive[API_HEADER]["instance"]`), então
-    ela fica `None`; o `async_api_set_range` compara
-    `instance == f"{COVER_DOMAIN}.{cover.ATTR_POSITION}"`, não casa, cai no
-    `else` e levanta `DIRECTIVE_NOT_SUPPORTED` — "Entity does not support
-    directive". A Alexa mostra "não está respondendo", mesmo o `Discover`
-    anunciando a capability com `"instance": "cover.position"`.
+    **O bug.** No app, o slider de percentual (cortina, ventilador, aspirador)
+    manda `Alexa.RangeController/SetRangeValue` com o `rangeValue` no payload,
+    mas **sem** a chave `instance` no header. O `AlexaDirective.load_entity` do
+    core só lê `instance` do *header*
+    (`self._directive[API_HEADER]["instance"]`), então ela fica `None`; o
+    `async_api_set_range` compara a instance com a string do domínio
+    (`cover.position`, `fan.percentage`, `vacuum.fan_speed`), não casa, cai no
+    `else` e levanta `DIRECTIVE_NOT_SUPPORTED`. A Alexa mostra "não está
+    respondendo", mesmo o `Discover` anunciando a capability certa.
 
     **Por que a Alexa omite.** A `instance` só é obrigatória quando o endpoint
-    declara **mais de uma** interface daquele tipo (duas `RangeController`, por
-    exemplo). A cortina exposta aqui só tem uma (`cover.position`), então a
-    Alexa pode mandar o directive sem ela — e cabe ao dispositivo resolver a
-    instance pelo contexto. O core não faz esse fallback.
+    declara **mais de uma** interface daquele tipo (duas `RangeController`).
+    Nestes domínios o core só publica **uma** `RangeController` por entidade,
+    então a Alexa pode omitir — e cabe ao dispositivo resolver pelo contexto.
+    O core não faz esse fallback.
 
-    **O que fazemos.** Só quando o directive é um `SetRangeValue` de
-    `RangeController` **sem** `instance`, e o endpoint é uma entidade `cover`
-    exposta que anuncia `cover.position` (ou seja, tem `SET_POSITION`),
-    injetamos `instance = "cover.position"`. É a mesma string que o
-    `interfaces()` publica e que o handler do core espera. Qualquer outro caso
-    — outra interface, outro domínio, `instance` já presente — passa intocado:
-    a normalização é cirúrgica, no único ponto em que o core e a Alexa
-    discordam.
+    **O que fazemos.** Em `SetRangeValue` de `RangeController` **sem**
+    `instance`, injetamos a instance default do domínio do endpoint. O mapa
+    abaixo espelha o que o `interfaces()` do core anuncia e o que o handler
+    compara. Qualquer outro caso — outra interface, domínio fora do mapa,
+    `instance` já presente — passa intocado.
 
     Muta o `directive` in place; o `async_handle_directive` o recebe já fora do
     envelope e o re-embrulha logo em seguida, então a alteração segue junto.
@@ -506,15 +503,21 @@ def _normalize_range_instance(directive: dict[str, Any]) -> None:
     endpoint_id = endpoint.get("endpointId")
     if not isinstance(endpoint_id, str):
         return
-    # Só cortina: é o único domínio que anuncia `cover.position` e que sofre
-    # esta omissão. `light`/`climate` mandam a instance (brilho, setpoint) ou
-    # usam outra interface.
     entity_id = endpoint_id.replace("#", ".")
-    if not entity_id.startswith("cover."):
-        return
-    from homeassistant.components import cover
+    domain = entity_id.split(".", 1)[0]
 
-    header["instance"] = f"{cover.DOMAIN}.{cover.ATTR_POSITION}"
+    if domain == "cover":
+        from homeassistant.components import cover
+
+        header["instance"] = f"{cover.DOMAIN}.{cover.ATTR_POSITION}"
+    elif domain == "fan":
+        from homeassistant.components import fan
+
+        header["instance"] = f"{fan.DOMAIN}.{fan.ATTR_PERCENTAGE}"
+    elif domain == "vacuum":
+        from homeassistant.components import vacuum
+
+        header["instance"] = f"{vacuum.DOMAIN}.{vacuum.ATTR_FAN_SPEED}"
 
 
 async def async_handle_directive(
@@ -545,7 +548,8 @@ async def async_handle_directive(
     from homeassistant.core import Context
 
     # Antes de entregar ao core: repõe o `instance` que a Alexa omite no
-    # `SetRangeValue` de cortina. Sem isto o core recusa com `INVALID_DIRECTIVE`
+    # `SetRangeValue` quando o endpoint só tem uma RangeController (cortina,
+    # ventilador, aspirador). Sem isto o core recusa com `INVALID_DIRECTIVE`
     # e a Alexa mostra "não está respondendo". Ver `_normalize_range_instance`.
     _normalize_range_instance(directive)
 

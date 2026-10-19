@@ -36,20 +36,22 @@ CONF_REPORT_STATE = "report_state"
 
 # Dominios que a integracao deixa escolher na tela de Opcoes. A lista e a unica
 # fonte de verdade do escopo: o `EntitySelector` do `config_flow` filtra por
-# ela e o `should_expose` aceita o que o usuario marcou.
+# ela, o painel da sidebar recebe a mesma lista em `config.domains`, e o
+# `should_expose` aceita o que o usuario marcou.
 #
-# Nao ha mapeamento de capacidades aqui — quem traduz `cover` em `SetPosition`
-# ou `climate` em `SetTargetTemperature` e o `ENTITY_ADAPTERS` do core, por
-# dominio. Ampliar o escopo e acrescentar um nome nesta tupla, nao mexer na
-# logica. Cada dominio novo so precisa entrar aqui e ter texto proprio na tela
-# (o texto e generico de proposposito, para nao mentir quando a selecao mistura
-# luz e cortina).
+# Nao ha mapeamento de capacidades aqui — quem traduz `cover` em `SetPosition`,
+# `climate` em `SetTargetTemperature`, `fan` em percentual ou `vacuum` em
+# start/return e o `ENTITY_ADAPTERS` do core, por dominio. Ampliar o escopo e
+# acrescentar um nome nesta tupla, nao mexer na logica. Cada dominio novo so
+# precisa entrar aqui e ter rotulo/icone no painel (`DOMAIN_LABELS`).
 #
 # `alarm_control_panel` e `lock` ficam de fora enquanto nao houver decisao de
-# produto: a Alexa pede PIN de voz nesses, e expor sem pensar vira risco.
+# produto: a Alexa pede PIN de voz no unlock, e expor sem pensar vira risco
+# (o core ja traduz Lock/Unlock; o bloqueio e so de produto). Ver analise em
+# `docs/alexa.md` (secao lock).
 # `sensor`/`binary_sensor`/`number` tambem ficam: so reportam, nunca executam,
 # e so poluem o app.
-EXPOSABLE_DOMAINS = ("light", "cover", "climate")
+EXPOSABLE_DOMAINS = ("light", "cover", "climate", "switch", "fan", "vacuum")
 
 # Prefixo do icone da marca na sidebar. O HA nao aceita imagem em `sidebar_icon`
 # de `panel_custom` (o `frontend.Panel` guarda so uma string MDI e a sidebar

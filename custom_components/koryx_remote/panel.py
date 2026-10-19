@@ -9,10 +9,11 @@ selecao multipla, mas **nao** da filtro por dominio em forma de abas. O
 clicavel. Testamos as duas formas (config unica e lista de configs por
 dominio) e a UI nao muda. Ver `config_flow.KoryxRemoteOptionsFlow`.
 
-Numa casa com 141 `light` + 11 `cover` + 7 `climate`, procurar na lista
-misturada e pior que poder dizer "so cortinas" antes de digitar. O painel
+Numa casa com dezenas de `light`/`switch`/`fan` misturados, procurar na
+lista e pior que poder dizer "so ventiladores" antes de digitar. O painel
 resolve isso com o que o formulario nao tem: busca, filtro por dominio e
-selecao que sobrevive a troca de filtro.
+selecao que sobrevive a troca de filtro. O escopo de dominios vem de
+`EXPOSABLE_DOMAINS` (passado em `config.domains` no registro do painel).
 
 O OptionsFlow **continua existindo** e e a fonte de verdade dos dados: o
 painel le e grava exatamente `entry.options["exposed_entities"]`. Quem
@@ -30,7 +31,7 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
 
-from .const import CUSTOM_ICON_PREFIX, DOMAIN
+from .const import CUSTOM_ICON_PREFIX, DOMAIN, EXPOSABLE_DOMAINS
 from .version import async_integration_version
 
 _LOGGER = logging.getLogger(__name__)
@@ -166,6 +167,11 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         embed_iframe=False,
         require_admin=False,
         config_panel_domain=DOMAIN,
+        # O painel le `config.domains` para filtrar o registry e desenhar os
+        # chips. Sem isto, o JS caia num fallback hardcoded e um dominio novo
+        # em `EXPOSABLE_DOMAINS` nao aparecia na UI ate alguem lembrar do
+        # fallback. Uma fonte so.
+        config={"domains": list(EXPOSABLE_DOMAINS)},
     )
     _LOGGER.debug("painel %s registrado em /%s", WEBCOMPONENT_NAME, FRONTEND_URL_PATH)
 

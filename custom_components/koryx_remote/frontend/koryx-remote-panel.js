@@ -12,24 +12,29 @@ import {
  * O formulário de Opções da integração usa o `EntitySelector` do HA, que dá
  * busca e seleção múltipla — mas **não** dá filtro por domínio em forma de
  * abas. O `filter` do HA só *restringe* a lista em silêncio; não desenha chip
- * clicável. Numa casa com 141 `light` + 11 `cover` + 7 `climate`, procurar na
- * lista misturada é pior que poder dizer "só cortinas" antes de digitar.
+ * clicável. Numa casa com dezenas de `light`/`switch`/`fan` misturados,
+ * procurar na lista é pior que poder dizer "só ventiladores" antes de digitar.
  *
  * O que este painel acrescenta, e só isso:
  *   - busca por nome/entity_id;
- *   - filtro por domínio (Luz / Cortina / Clima);
+ *   - filtro por domínio (chips a partir de `EXPOSABLE_DOMAINS`);
  *   - seleção que **sobrevive à troca de filtro** — marcar uma luz, filtrar
  *     só cortinas, marcar mais, e aplicar a união de uma vez.
  *
  * A fonte de verdade continua sendo `entry.options["exposed_entities"]`: o
  * painel lê e grava exatamente ali, pelo mesmo websocket que o formulário
- * nativo usa. Não há uma segunda cópia da seleção.
+ * nativo usa. Não há uma segunda cópia da seleção. O escopo de domínios vem
+ * de `panel.config.domains` (passado pelo `panel.py` a partir de
+ * `EXPOSABLE_DOMAINS`); o fallback abaixo só cobre HA antigo sem config.
  */
 
 const DOMAIN_LABELS = {
   light: { pt: "Luzes", en: "Lights", icon: "mdi:lightbulb" },
   cover: { pt: "Cortinas", en: "Covers", icon: "mdi:window-shutter" },
   climate: { pt: "Clima", en: "Climate", icon: "mdi:thermostat" },
+  switch: { pt: "Tomadas", en: "Switches", icon: "mdi:toggle-switch" },
+  fan: { pt: "Ventiladores", en: "Fans", icon: "mdi:fan" },
+  vacuum: { pt: "Aspiradores", en: "Vacuums", icon: "mdi:robot-vacuum" },
 };
 
 /**
@@ -259,11 +264,15 @@ class KoryxRemotePanel extends LitElement {
       const list = await this._fetchExposable();
       // Preserva o que já estava marcado mesmo se a listagem mudou desde
       // então (uma entidade removida do HA não deve sumir do painel sem
-      // aviso — mostramos ela com o próprio id).
+      // aviso — mostramos ela com o nome do state, ou o próprio id).
       const byId = new Map(list.map((x) => [x.entity_id, x]));
       for (const id of chosen) {
         if (!byId.has(id)) {
-          byId.set(id, { entity_id: id, name: id, domain: id.split(".")[0] });
+          byId.set(id, {
+            entity_id: id,
+            name: this._entityName(null, id),
+            domain: id.split(".")[0],
+          });
         }
       }
       this._entries = [...byId.values()].sort((a, b) =>
@@ -313,25 +322,57 @@ class KoryxRemotePanel extends LitElement {
   }
 
   /**
+   * Nome de exibição alinhado ao resto do HA.
+   *
+   * O entity registry só tem `name` (override do usuário) e `original_name`
+   * (o que a integração gravou). Muitas entidades deixam os dois `null` e o
+   * nome "bonito" vive só no state (`attributes.friendly_name`) — o mesmo
+   * que o HA usa no resto da UI. Sem esse fallback o painel mostrava o
+   * entity_id cru (ex.: `climate.ar_alice` em vez de "Ar Alice").
+   */
+  _entityName(entry, entityId) {
+    const id = (entry && entry.entity_id) || entityId;
+    const override = entry && entry.name;
+    if (override) return override;
+    const original = entry && entry.original_name;
+    if (original) return original;
+    const state =
+      this.hass && this.hass.states && id ? this.hass.states[id] : null;
+    const friendly =
+      state && state.attributes && state.attributes.friendly_name;
+    if (typeof friendly === "string" && friendly.trim()) return friendly;
+    return id;
+  }
+
+  /**
    * Entidades elegíveis, com nome e domínio.
    *
-   * Usa o registry (área 3 = entidade) via `config/entity_registry/list`, e
-   * filtra pelos domínios que a integração expõe. O `friendly_name` do
-   * registry é o que o usuário vê em todo o HA — é o nome certo para buscar.
+   * Usa o registry (área 3 = entidade) via `config/entity_registry/list`,
+   * filtra pelos domínios que a integração expõe, e resolve o rótulo com
+   * `_entityName` (registry → friendly_name do state → entity_id).
    */
+  _allowedDomains() {
+    const fromConfig =
+      this.panel && this.panel.config && Array.isArray(this.panel.config.domains)
+        ? this.panel.config.domains
+        : null;
+    // Fallback alinhado a `EXPOSABLE_DOMAINS` (const.py). Se o painel foi
+    // registrado sem `config.domains` (HA antigo / registro manual), ainda
+    // listamos o escopo atual — senão some switch/fan/vacuum da UI.
+    return fromConfig && fromConfig.length
+      ? fromConfig
+      : ["light", "cover", "climate", "switch", "fan", "vacuum"];
+  }
+
   async _fetchExposable() {
-    const allowed = (this.panel && this.panel.config && this.panel.config.domains) || [
-      "light",
-      "cover",
-      "climate",
-    ];
+    const allowed = this._allowedDomains();
     const registry = await this.hass.callWS({ type: "config/entity_registry/list" });
     return registry
       .filter((e) => allowed.includes(e.entity_id.split(".")[0]))
       .filter((e) => !e.hidden_by && !e.disabled_by)
       .map((e) => ({
         entity_id: e.entity_id,
-        name: e.name || e.original_name || e.entity_id,
+        name: this._entityName(e),
         domain: e.entity_id.split(".")[0],
       }));
   }
@@ -425,7 +466,13 @@ class KoryxRemotePanel extends LitElement {
       return html`<div class="wrap"><ha-circular-progress active></ha-circular-progress></div>`;
     }
 
-    const doms = ["all", ...Object.keys(DOMAIN_LABELS)];
+    // Chips na ordem de `EXPOSABLE_DOMAINS` (via config), não na ordem do
+    // objeto de rótulos — assim um domínio novo aparece no mesmo lugar do
+    // const.py sem depender da ordem de inserção do JS.
+    const doms = [
+      "all",
+      ...this._allowedDomains().filter((d) => DOMAIN_LABELS[d]),
+    ];
     const counts = {};
     for (const e of this._entries) {
       counts[e.domain] = (counts[e.domain] || 0) + 1;
