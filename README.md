@@ -19,6 +19,39 @@ para o Koryx Remote e devolve a interface original do Home Assistant em
 No fim, o próprio Home Assistant mostra o endereço da sua casa e o guarda em
 `external_url`.
 
+## Em casa vs fora (app e browser)
+
+O endereço `https://{sua-casa}.koryx.one` **sempre** passa pelo túnel do Koryx —
+mesmo se você estiver no Wi‑Fi de casa. Câmeras e dashboards nesse host consomem
+a cota da nuvem. Em casa o ideal é o Home Assistant pela rede local.
+
+### App Companion (automático)
+
+No app, configure as duas URLs e o Wi‑Fi de casa (o app escolhe pela SSID):
+
+| Campo | Valor |
+| --- | --- |
+| URL externa | `https://{sua-casa}.koryx.one` |
+| URL interna | `http://homeassistant.local:8123` (ou o IP do HA na LAN) |
+| Rede Wi‑Fi de casa | o SSID da sua rede |
+
+Assim o celular usa a LAN em casa e o Koryx quando está fora. É o mesmo modelo
+do Home Assistant Cloud / Nabu Casa.
+
+### Browser, tablet e PC (orientação)
+
+No navegador **não** há troca automática. Para dashboard fixo em casa
+(tablet na parede, PC), use o favorito local:
+
+- `http://homeassistant.local:8123`, ou
+- `http://{IP-do-HA}:8123`
+
+Reserve `https://{sua-casa}.koryx.one` para quando estiver fora.
+
+> Rewrite DNS (AdGuard / Pi-hole) no host `koryx.one` **não** resolve o caso
+> do browser: o certificado HTTPS fica na VPS do Koryx, não no HA. Apontar o
+> nome para o IP local quebra o HTTPS. Use a URL local no favorito.
+
 ### Pelo HACS
 
 1. HACS → Integrações → os três pontos → **Repositório customizado**.
