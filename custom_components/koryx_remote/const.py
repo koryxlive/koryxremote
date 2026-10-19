@@ -45,13 +45,20 @@ CONF_REPORT_STATE = "report_state"
 # acrescentar um nome nesta tupla, nao mexer na logica. Cada dominio novo so
 # precisa entrar aqui e ter rotulo/icone no painel (`DOMAIN_LABELS`).
 #
-# `alarm_control_panel` e `lock` ficam de fora enquanto nao houver decisao de
-# produto: a Alexa pede PIN de voz no unlock, e expor sem pensar vira risco
-# (o core ja traduz Lock/Unlock; o bloqueio e so de produto). Ver analise em
-# `docs/alexa.md` (secao lock).
+# `lock` entra: o core ja traduz Lock/Unlock; o PIN de 4 digitos e so no app
+# da Alexa (nao chega ao HA). `alarm_control_panel` continua fora — o disarm
+# pode carregar codigo no directive e e outro risco. Ver `docs/alexa.md`.
 # `sensor`/`binary_sensor`/`number` tambem ficam: so reportam, nunca executam,
 # e so poluem o app.
-EXPOSABLE_DOMAINS = ("light", "cover", "climate", "switch", "fan", "vacuum")
+EXPOSABLE_DOMAINS = (
+    "light",
+    "cover",
+    "climate",
+    "switch",
+    "fan",
+    "vacuum",
+    "lock",
+)
 
 # Prefixo do icone da marca na sidebar. O HA nao aceita imagem em `sidebar_icon`
 # de `panel_custom` (o `frontend.Panel` guarda so uma string MDI e a sidebar

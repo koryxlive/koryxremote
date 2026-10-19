@@ -25,7 +25,7 @@ import {
  * painel lê e grava exatamente ali, pelo mesmo websocket que o formulário
  * nativo usa. Não há uma segunda cópia da seleção. O escopo de domínios vem
  * de `panel.config.domains` (passado pelo `panel.py` a partir de
- * `EXPOSABLE_DOMAINS`); o fallback abaixo só cobre HA antigo sem config.
+ * `EXPOSABLE_DOMAINS`); sem config, o fallback é `Object.keys(DOMAIN_LABELS)`.
  */
 
 const DOMAIN_LABELS = {
@@ -35,6 +35,7 @@ const DOMAIN_LABELS = {
   switch: { pt: "Tomadas", en: "Switches", icon: "mdi:toggle-switch" },
   fan: { pt: "Ventiladores", en: "Fans", icon: "mdi:fan" },
   vacuum: { pt: "Aspiradores", en: "Vacuums", icon: "mdi:robot-vacuum" },
+  lock: { pt: "Fechaduras", en: "Locks", icon: "mdi:lock" },
 };
 
 /**
@@ -356,12 +357,13 @@ class KoryxRemotePanel extends LitElement {
       this.panel && this.panel.config && Array.isArray(this.panel.config.domains)
         ? this.panel.config.domains
         : null;
-    // Fallback alinhado a `EXPOSABLE_DOMAINS` (const.py). Se o painel foi
-    // registrado sem `config.domains` (HA antigo / registro manual), ainda
-    // listamos o escopo atual — senão some switch/fan/vacuum da UI.
+    // Fonte de verdade: `config.domains` (= `EXPOSABLE_DOMAINS` no panel.py).
+    // Fallback só se o painel foi registrado sem config (HA antigo / registro
+    // manual): as chaves de `DOMAIN_LABELS`, para não manter uma segunda lista
+    // hardcoded que esquece domínio novo.
     return fromConfig && fromConfig.length
       ? fromConfig
-      : ["light", "cover", "climate", "switch", "fan", "vacuum"];
+      : Object.keys(DOMAIN_LABELS);
   }
 
   async _fetchExposable() {
