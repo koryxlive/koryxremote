@@ -41,6 +41,10 @@ PLAN_LABELS = {
 # dos lados derrubando conexão que o outro considera saudável.
 PING_INTERVAL_SECONDS = 15
 PING_DEADLINE_SECONDS = 45
+# O maior silêncio normal do Agent é o intervalo do PING (15 s), e o HA responde
+# o PONG logo atrás. Abaixo do prazo inteiro, a medição estaria amostrando essa
+# onda normal; igualando o prazo, a métrica só acusa falha de fato.
+IDLE_DIAGNOSTIC_S = PING_DEADLINE_SECONDS
 
 
 class TrialEnded(Exception):
@@ -85,6 +89,10 @@ class KoryxLink:
         self.plan = str(entry.data.get(CONF_PLAN) or "trial")
         self.ends_at = _parse_datetime(entry.data.get(CONF_ENDS_AT))
         self._stop = asyncio.Event()
+        # Quando o event loop do HA ficou parado mais que o prazo (ver
+        # `_idle_diagnostic`). `None` = nenhum atraso anormal desde a conexão.
+        self.last_stall_s: float | None = None
+        self._ultimo_momento = 0.0
         self._listeners: list[Callable[[], None]] = []
         self._writers: dict[str, asyncio.StreamWriter] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -128,9 +136,34 @@ class KoryxLink:
 
         return remove
 
+    def _idle_diagnostic(self, onde: str) -> None:
+        """Registra quando o event loop ficou parado; nunca reclama do normal.
+
+        O `_ping` decide a queda olhando o mesmo relógio. Se a task demorou para
+        voltar, o problema é local — HA sobrecarregado, integração bloqueando o
+        loop —, e reconectar não resolve. Se a task rodou no prazo, a conexão
+        morreu no caminho (WAN/NAT): o prazo e a reconexão são a resposta certa.
+        Sem essa linha os dois casos saem iguais no log da plataforma, e não há
+        como saber de que lado está o defeito.
+        """
+        agora = asyncio.get_running_loop().time()
+        atraso = agora - self._ultimo_momento
+        self._ultimo_momento = agora
+        if atraso <= IDLE_DIAGNOSTIC_S:
+            return
+        self.last_stall_s = round(atraso)
+        _LOGGER.warning(
+            "Koryx Remote: o event loop do HA ficou %ss parado antes de %s "
+            "(integracao ou HA sobrecarregado?)",
+            round(atraso),
+            onde,
+        )
+
     async def run(self) -> None:
         delay = 1
         while not self._stop.is_set():
+            self._ultimo_momento = asyncio.get_running_loop().time()
+            self.last_stall_s = None
             try:
                 await self._connect_once()
                 delay = 1
@@ -196,6 +229,7 @@ class KoryxLink:
                             ):
                                 break
                             continue
+                        self._idle_diagnostic("mensagem do Relay")
                         authed = await self._on_message(message.data, authed)
                 finally:
                     ping.cancel()
@@ -234,6 +268,17 @@ class KoryxLink:
             if ws.closed:
                 return
             if loop.time() - last_ping > PING_DEADLINE_SECONDS:
+                if self.last_stall_s is not None:
+                    _LOGGER.warning(
+                        "Koryx Remote: o Agent ficou %ss sem rodar (event loop do HA "
+                        "parado); a queda do túnel teve a mesma causa",
+                        self.last_stall_s,
+                    )
+                else:
+                    _LOGGER.warning(
+                        "Koryx Remote: o Agent rodou no prazo, mas o Relay ficou calado; "
+                        "a conexão morreu no caminho casa -> servidor"
+                    )
                 _LOGGER.warning(
                     "Koryx Remote: Relay sem resposta há %ss; reconectando",
                     PING_DEADLINE_SECONDS,
