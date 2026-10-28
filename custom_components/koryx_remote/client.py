@@ -17,6 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import device_registry
 
 from .const import (
     CONF_CREDENTIAL,
@@ -25,6 +26,7 @@ from .const import (
     CONF_PLAN,
     CONF_RELAY_URL,
     CONF_URL,
+    DOMAIN,
 )
 from .version import async_integration_version
 
@@ -136,7 +138,10 @@ class KoryxLink:
         O Relay envia a cada AUTH_OK/PONG a URL externa da casa — o domínio
         próprio white-label quando ativo, senão o slug. Quando muda (um domínio
         foi ativado depois do pareamento), gravamos no `external_url` do HA para
-        que ele gere links absolutos (Companion, notificações) no endereço certo.
+        que ele gere links absolutos (Companion, notificações) no endereço certo,
+        e atualizamos o título da entry + o `configuration_url` do dispositivo,
+        para a interface de "Dispositivos e serviços" não seguir mostrando o
+        slug/domínio antigo (o título fica congelado no pareamento).
         Só aceita `https://` e ignora repetições da mesma URL.
         """
         if not isinstance(url, str) or not url.startswith("https://"):
@@ -148,6 +153,39 @@ class KoryxLink:
             await self.hass.config.async_update(external_url=url)
         except Exception:  # pragma: no cover - config update não deve derrubar o túnel
             _LOGGER.exception("Koryx Remote: falha ao atualizar external_url")
+
+        # Persistir a URL nova na entry (título + data) e no device registry.
+        # `async_update_entry` é síncrono e NÃO recarrega a integração: só muta a
+        # entry in place, dispara os `update_listeners` em task separada (o nosso
+        # `_async_options_updated`, idempotente) e agenda o save. Fazer isso dentro
+        # do handler da mensagem é seguro — não derruba o túnel.
+        try:
+            self.hass.config_entries.async_update_entry(
+                self.entry,
+                title=url,
+                data={**self.entry.data, CONF_URL: url},
+            )
+            self._update_device_configuration_url(url)
+        except Exception:  # pragma: no cover - nunca derruba o túnel por isso
+            _LOGGER.exception("Koryx Remote: falha ao atualizar título/URL da entry")
+
+    def _update_device_configuration_url(self, url: str) -> None:
+        """Atualiza o `configuration_url` do dispositivo (link "Visitar").
+
+        O `DeviceInfo` das entidades é montado no setup a partir de
+        `entry.data[CONF_URL]`; sem isto o link do device registry ficaria preso
+        na URL do pareamento até o próximo restart/reload.
+        """
+        registry = device_registry.async_get(self.hass)
+        # Lookup não-ambíguo por (identificador, entry_id) nas versões atuais;
+        # `async_get_device` é o fallback para HA mais antigo (deprecado em 2027.8).
+        get_device = getattr(registry, "async_get_device_by_identifier", None)
+        if get_device is not None:
+            device = get_device((DOMAIN, self.entry.entry_id), self.entry.entry_id)
+        else:  # pragma: no cover - só em HA antigo
+            device = registry.async_get_device({(DOMAIN, self.entry.entry_id)})
+        if device is not None and device.configuration_url != url:
+            registry.async_update_device(device.id, configuration_url=url)
 
     @property
     def expiry(self) -> datetime | None:
