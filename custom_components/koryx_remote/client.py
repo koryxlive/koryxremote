@@ -24,6 +24,7 @@ from .const import (
     CONF_EXPOSED_ENTITIES,
     CONF_PLAN,
     CONF_RELAY_URL,
+    CONF_URL,
 )
 from .version import async_integration_version
 
