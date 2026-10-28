@@ -3,10 +3,24 @@
     "step": {
       "user": {
         "title": "Koryx Remote",
+        "menu_options": {
+          "login": "Entrar com e-mail",
+          "pair": "Vincular com código"
+        }
+      },
+      "login": {
+        "title": "Koryx Remote",
         "description": "Entre com a conta Koryx Remote. A senha não fica salva.",
         "data": {
           "email": "E-mail",
           "password": "Senha"
+        }
+      },
+      "pair": {
+        "title": "Vincular com código",
+        "description": "Crie a casa no painel Koryx e digite o código de pareamento exibido lá.",
+        "data": {
+          "pair_code": "Código de pareamento"
         }
       },
       "server": {
@@ -23,6 +37,7 @@
     },
     "error": {
       "invalid_auth": "E-mail ou senha incorretos.",
+      "invalid_code": "Código de pareamento inválido ou expirado.",
       "access_ended": "O período de acesso acabou.",
       "cannot_connect": "Não foi possível falar com o Koryx Remote.",
       "unknown": "Não foi possível ligar a casa."

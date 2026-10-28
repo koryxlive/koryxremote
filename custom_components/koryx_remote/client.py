@@ -6,7 +6,7 @@ import asyncio
 import base64
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -45,6 +45,13 @@ PING_DEADLINE_SECONDS = 45
 # o PONG logo atrás. Abaixo do prazo inteiro, a medição estaria amostrando essa
 # onda normal; igualando o prazo, a métrica só acusa falha de fato.
 IDLE_DIAGNOSTIC_S = PING_DEADLINE_SECONDS
+
+# Quanto esperar para tentar reconectar depois de o Relay recusar o acesso
+# (trial/plano vencido, close 4403). Antes era 300 s (5 min): renovar a
+# assinatura voltava a funcionar, mas a casa levava até 5 minutos para
+# reaparecer. Um minuto basta para detectar a renovação sem martelar o Relay —
+# cada tentativa recusada custa só uma consulta de entitlement no servidor.
+TRIAL_RETRY_SECONDS = 60
 
 
 class TrialEnded(Exception):
@@ -88,6 +95,9 @@ class KoryxLink:
         # Vem do `/agents/link` e do `AUTH_OK`. O sensor de vencimento lê daqui.
         self.plan = str(entry.data.get(CONF_PLAN) or "trial")
         self.ends_at = _parse_datetime(entry.data.get(CONF_ENDS_AT))
+        # URL externa atual, do pareamento; o Relay reenvia a cada AUTH_OK/PONG
+        # e a trocamos quando um domínio próprio (white-label) fica ativo.
+        self._external_url = str(entry.data.get(CONF_URL) or "")
         self._stop = asyncio.Event()
         # Quando o event loop do HA ficou parado mais que o prazo (ver
         # `_idle_diagnostic`). `None` = nenhum atraso anormal desde a conexão.
@@ -97,6 +107,9 @@ class KoryxLink:
         self._writers: dict[str, asyncio.StreamWriter] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._ws: aiohttp.ClientWebSocketResponse | None = None
+        # Handler que liga/desliga o Report State da Alexa. Injetado pelo
+        # `__init__.py`, que é quem detém o `report_state_unsub` do core.
+        self._report_state_handler: Callable[[bool], Awaitable[None]] | None = None
 
     def update_entitlement(self, plan: Any, ends_at: Any) -> None:
         """Atualiza plano e fim do acesso, avisando só quando algo muda."""
@@ -115,6 +128,25 @@ class KoryxLink:
     def plan_label(self) -> str:
         """Nome do plano para mostrar. Desconhecido volta cru, não inventado."""
         return PLAN_LABELS.get(self.plan, self.plan)
+
+    async def update_external_url(self, url: Any) -> None:
+        """Aponta o `external_url` do HA para a URL que o Relay mandou.
+
+        O Relay envia a cada AUTH_OK/PONG a URL externa da casa — o domínio
+        próprio white-label quando ativo, senão o slug. Quando muda (um domínio
+        foi ativado depois do pareamento), gravamos no `external_url` do HA para
+        que ele gere links absolutos (Companion, notificações) no endereço certo.
+        Só aceita `https://` e ignora repetições da mesma URL.
+        """
+        if not isinstance(url, str) or not url.startswith("https://"):
+            return
+        if url == self._external_url:
+            return
+        self._external_url = url
+        try:
+            await self.hass.config.async_update(external_url=url)
+        except Exception:  # pragma: no cover - config update não deve derrubar o túnel
+            _LOGGER.exception("Koryx Remote: falha ao atualizar external_url")
 
     @property
     def expiry(self) -> datetime | None:
@@ -135,6 +167,30 @@ class KoryxLink:
                 self._listeners.remove(update)
 
         return remove
+
+    def set_report_state_handler(
+        self, handler: Callable[[bool], Awaitable[None]]
+    ) -> None:
+        """Registra quem liga/desliga o Report State da Alexa.
+
+        O vencimento corta o túnel, mas o listener proativo do core continua
+        registrado e a casa seguiria postando `ChangeReport` para a Amazon sem
+        pagar. O handler é async porque reativar exige o
+        `async_enable_proactive_mode` do core.
+        """
+        self._report_state_handler = handler
+
+    async def _set_report_state(self, active: bool) -> None:
+        """Alterna o Report State da Alexa, sem derrubar o túnel se falhar."""
+        handler = self._report_state_handler
+        if handler is None:
+            return
+        try:
+            await handler(active)
+        except Exception:  # pragma: no cover - o handler é nosso e não deve falhar
+            _LOGGER.exception(
+                "Koryx Remote: falha ao alternar o Report State da Alexa"
+            )
 
     def _idle_diagnostic(self, onde: str) -> None:
         """Registra quando o event loop ficou parado; nunca reclama do normal.
@@ -171,7 +227,10 @@ class KoryxLink:
                 raise
             except TrialEnded:
                 self._set_connected(False)
-                delay = 300
+                delay = TRIAL_RETRY_SECONDS
+                # Corte de acesso: para de empurrar ChangeReport para a Amazon
+                # enquanto a assinatura não voltar. Reativado no AUTH_OK.
+                await self._set_report_state(False)
             except CredentialRejected:
                 # Nao adianta tentar de novo: a credencial da entry foi
                 # revogada por um login mais recente. O usuario precisa
@@ -304,14 +363,20 @@ class KoryxLink:
             # Handshake: plano e vencimento vêm junto para o sensor não ficar
             # preso ao que foi gravado no login.
             self.update_entitlement(frame.get("plan"), frame.get("endsAt"))
+            await self.update_external_url(frame.get("url"))
             # A lista de entidades expostas vai logo depois do AUTH_OK: é o que
             # alimenta o Discovery da Alexa, e ela muda sem reconectar.
             await self._send_exposed_entities()
+            # Acesso restaurado (renovação): religa o Report State que o
+            # vencimento tinha desligado. Idempotente — num reconnect comum o
+            # handler só reavalia a opção do usuário.
+            await self._set_report_state(True)
             return True
         if kind == "PONG":
             # A cada PING (~15 s) o Relay reenvia plano/endsAt. Sem isso, uma
             # mudança no /kxpanel só apareceria no HA depois de reconectar.
             self.update_entitlement(frame.get("plan"), frame.get("endsAt"))
+            await self.update_external_url(frame.get("url"))
             return authed
         error = frame.get("error")
         if kind == "ERROR" and isinstance(error, dict) and error.get("code") == "PLAN_EXPIRED":

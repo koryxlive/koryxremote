@@ -31,6 +31,11 @@ class _EntryState:
     link: KoryxLink
     update_coordinator: KoryxUpdateCoordinator
     report_state_unsub: CALLBACK_TYPE | None = field(default=None)
+    # Report State pausado pelo vencimento (o túnel foi cortado, mas o usuário
+    # não desligou a opção). Diferente de `report_state_unsub` ser `None` por
+    # escolha: aqui o usuário quer o report state, e só o acesso que está
+    # suspenso. Reativado quando o túnel volta (AUTH_OK).
+    report_state_paused: bool = field(default=False)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -43,6 +48,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = KoryxUpdateCoordinator(hass, entry)
     state = _EntryState(link=KoryxLink(hass, entry), update_coordinator=coordinator)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = state
+    # Report State da Alexa acompanha o acesso: quando o vencimento corta o
+    # túnel, o HA para de postar ChangeReport; quando a assinatura volta (o
+    # link reautentica no AUTH_OK), religa. O handler é async e roda no loop do
+    # próprio link.
+    state.link.set_report_state_handler(
+        lambda active: _async_set_report_state_active(hass, entry, state, active)
+    )
     # Primeira leitura antes das plataformas. Só `async_refresh`: se
     # GitHub/API falharem, a entry sobe mesmo assim — o túnel não depende
     # do check de versão (first_refresh em falha marcaria a entry not ready).
@@ -120,14 +132,34 @@ async def _async_refresh_report_state(
     que só mexeu na seleção de entidades (com `report_state` seguindo ligado)
     registraria um segundo listener, e cada mudança de estado geraria dois
     `ChangeReport` — a Alexa receberia o mesmo evento em duplicidade.
+
+    Respeita o `report_state_paused`: quando o acesso foi cortado, o listener
+    é desligado e **não** é recriado, mesmo com a opção do usuário ligada. Só
+    o `AUTH_OK` da reconexão (via `_async_set_report_state_active`) religa.
     """
     if state.report_state_unsub is not None:
         state.report_state_unsub()
         state.report_state_unsub = None
 
+    if state.report_state_paused:
+        return
+
     from .alexa import async_enable_report_state
 
     state.report_state_unsub = await async_enable_report_state(hass, entry)
+
+
+async def _async_set_report_state_active(
+    hass: HomeAssistant, entry: ConfigEntry, state: _EntryState, active: bool
+) -> None:
+    """Liga/desliga o Report State acompanhando o acesso (não a opção).
+
+    Chamado pelo `KoryxLink` quando o túnel é cortado por vencimento (desliga)
+    ou reautentica (religa). A opção do usuário em `entry.options` segue
+    intocada — é o que permite religar automaticamente após a renovação.
+    """
+    state.report_state_paused = not active
+    await _async_refresh_report_state(hass, entry, state)
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:

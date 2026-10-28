@@ -26,6 +26,7 @@ from .const import (
     CONF_EMAIL,
     CONF_ENDS_AT,
     CONF_EXPOSED_ENTITIES,
+    CONF_PAIR_CODE,
     CONF_PLAN,
     CONF_RELAY_URL,
     CONF_REPORT_STATE,
@@ -51,6 +52,7 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._email = ""
         self._password = ""
+        self._pair_code = ""
         self._api_url = ""
         self._credential = ""
         self._relay_url = ""
@@ -60,13 +62,57 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
         self._ends_at = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Menu de entrada: login por e-mail (1ª casa) ou código de pareamento.
+
+        A 1ª casa continua no login por e-mail, com zero fricção. As demais são
+        criadas no painel web, que entrega um código — o HA digita o código e
+        liga a casa certa, sem ambiguidade entre "casa nova" e "religar a mesma".
+        """
+        return self.async_show_menu(step_id="user", menu_options=["login", "pair"])
+
+    async def async_step_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             self._email = str(user_input[CONF_EMAIL]).strip().lower()
             self._password = str(user_input[CONF_PASSWORD])
             await self.async_set_unique_id(self._email)
             self._abort_if_unique_id_configured()
             return await self._link_or_ask_server(DEFAULT_API_URL)
-        return self.async_show_form(step_id="user", data_schema=self._user_schema())
+        return self.async_show_form(step_id="login", data_schema=self._user_schema())
+
+    async def async_step_pair(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        if user_input is not None:
+            self._pair_code = str(user_input[CONF_PAIR_CODE]).strip().upper()
+            try:
+                paired = await _pair(
+                    DEFAULT_API_URL,
+                    self._pair_code,
+                    await async_integration_version(self.hass),
+                )
+            except InvalidCode:
+                return self.async_show_form(
+                    step_id="pair",
+                    data_schema=self._pair_schema(),
+                    errors={"base": "invalid_code"},
+                )
+            except (aiohttp.ClientError, TimeoutError, KeyError):
+                return self.async_show_form(
+                    step_id="pair",
+                    data_schema=self._pair_schema(),
+                    errors={"base": "cannot_connect"},
+                )
+            self._api_url = DEFAULT_API_URL
+            self._credential = str(paired["credential"])
+            self._relay_url = str(paired["relayUrl"])
+            self._slug = str(paired["slug"])
+            self._url = str(paired["url"])
+            self._plan = str(paired.get("plan") or "trial")
+            self._ends_at = str(paired.get("endsAt") or "")
+            # Um id por casa: o mesmo e-mail pode ter várias casas, então o
+            # `unique_id` não pode ser o e-mail aqui (senão só uma entry).
+            await self.async_set_unique_id(f"installation-{str(paired['installationId'])}")
+            self._abort_if_unique_id_configured()
+            return await self.async_step_linked()
+        return self.async_show_form(step_id="pair", data_schema=self._pair_schema())
 
     async def async_step_server(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
@@ -85,13 +131,13 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
             )
         except InvalidAuth:
             return self.async_show_form(
-                step_id="user",
+                step_id="login",
                 data_schema=self._user_schema(),
                 errors={"base": "invalid_auth"},
             )
         except AccessEnded:
             return self.async_show_form(
-                step_id="user",
+                step_id="login",
                 data_schema=self._user_schema(),
                 errors={"base": "access_ended"},
             )
@@ -157,6 +203,13 @@ class KoryxRemoteConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def _server_schema(self) -> vol.Schema:
         return vol.Schema({vol.Required(CONF_API_URL, default=DEFAULT_API_URL): str})
+
+    def _pair_schema(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required(CONF_PAIR_CODE, default=self._pair_code): str,
+            }
+        )
 
 
 class KoryxRemoteOptionsFlow(OptionsFlow):
@@ -260,6 +313,26 @@ class InvalidAuth(Exception):
 
 class AccessEnded(Exception):
     """O acesso terminou: trial vencido ou plano pago sem renovação."""
+
+
+class InvalidCode(Exception):
+    """Código de pareamento inválido, usado ou expirado."""
+
+
+async def _pair(api_url: str, code: str, version: str) -> dict[str, Any]:
+    timeout = aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
+        f"{api_url}/api/v1/agents/pair",
+        json={"code": code, "version": version},
+    ) as response:
+        if response.status == 401:
+            raise InvalidCode
+        if response.status != 201:
+            raise aiohttp.ClientError
+        body = await response.json()
+    if not isinstance(body, dict):
+        raise KeyError
+    return body
 
 
 async def _link(api_url: str, email: str, password: str, version: str) -> dict[str, Any]:

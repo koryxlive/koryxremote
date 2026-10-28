@@ -3,10 +3,24 @@
     "step": {
       "user": {
         "title": "Koryx Remote",
+        "menu_options": {
+          "login": "Log in with email",
+          "pair": "Pair with a code"
+        }
+      },
+      "login": {
+        "title": "Koryx Remote",
         "description": "Sign in with your Koryx Remote account. The password is not stored.",
         "data": {
           "email": "Email",
           "password": "Password"
+        }
+      },
+      "pair": {
+        "title": "Pair with a code",
+        "description": "Create the home in the Koryx panel and enter the pairing code shown there.",
+        "data": {
+          "pair_code": "Pairing code"
         }
       },
       "server": {
@@ -23,6 +37,7 @@
     },
     "error": {
       "invalid_auth": "Incorrect email or password.",
+      "invalid_code": "Invalid or expired pairing code.",
       "access_ended": "The access period has ended.",
       "cannot_connect": "Could not reach Koryx Remote.",
       "unknown": "Could not connect the home."

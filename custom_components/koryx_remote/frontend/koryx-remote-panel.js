@@ -465,7 +465,12 @@ class KoryxRemotePanel extends LitElement {
   render() {
     const t = this._t;
     if (this._loading) {
-      return html`<div class="wrap"><ha-circular-progress active></ha-circular-progress></div>`;
+      return html`
+        <ha-top-app-bar-fixed .narrow=${this.narrow}>
+          <span slot="title">${t.title}</span>
+          <div class="wrap"><ha-circular-progress active></ha-circular-progress></div>
+        </ha-top-app-bar-fixed>
+      `;
     }
 
     // Chips na ordem de `EXPOSABLE_DOMAINS` (via config), não na ordem do
@@ -481,81 +486,83 @@ class KoryxRemotePanel extends LitElement {
     }
 
     return html`
-      <div class="wrap">
-        <header>
-          ${renderLogo()}
-          <div class="titles">
-            <h1>${t.title}</h1>
-            <p class="sub">${t.subtitle}</p>
-          </div>
-        </header>
+      <ha-top-app-bar-fixed .narrow=${this.narrow}>
+        <span slot="title">${t.title}</span>
+        <div class="wrap">
+          <header>
+            ${renderLogo()}
+            <div class="titles">
+              <p class="sub">${t.subtitle}</p>
+            </div>
+          </header>
 
-        <div class="bar">
-          <ha-input
-            class="search"
-            .value=${this._query}
-            .label=${t.search}
-            .placeholder=${t.search}
-            @input=${(e) => {
-              this._query = e.target.value;
-            }}
-          ></ha-input>
-          <div class="tabs">
-            ${doms.map(
-              (d) => html`
-                <button
-                  class="tab ${this._domain === d ? "on" : ""}"
-                  @click=${() => {
-                    this._domain = d;
-                  }}
-                >
-                  ${d === "all" ? t.all : DOMAIN_LABELS[d][this._lang]}
-                  ${d !== "all" && counts[d] ? html`<span class="n">${counts[d]}</span>` : ""}
-                </button>
-              `,
-            )}
-          </div>
-        </div>
-
-        <div class="meta">
-          <span>${this._selected.size} ${t.selected}</span>
-          <span class="actions">
-            <button @click=${this.selectAllVisible}>${t.selectAll}</button>
-            <button @click=${this.unselectAll}>${t.unselectAll}</button>
-          </span>
-        </div>
-
-        ${this._error ? html`<div class="err">${this._error}</div>` : ""}
-
-        <ul class="list">
-          ${this._visible.length === 0
-            ? html`<li class="none">${this._query ? t.emptyFilter : t.empty}</li>`
-            : this._visible.map(
-                (e) => html`
-                  <li class="${this._selected.has(e.entity_id) ? "sel" : ""}">
-                    <label>
-                      <ha-checkbox
-                        .checked=${this._selected.has(e.entity_id)}
-                        @change=${() => this.toggle(e.entity_id)}
-                      ></ha-checkbox>
-                      <ha-icon
-                        .icon=${DOMAIN_LABELS[e.domain] ? DOMAIN_LABELS[e.domain].icon : "mdi:shape"}
-                      ></ha-icon>
-                      <span class="nm">${e.name}</span>
-                      <span class="id">${e.entity_id}</span>
-                    </label>
-                  </li>
+          <div class="bar">
+            <ha-input
+              class="search"
+              .value=${this._query}
+              .label=${t.search}
+              .placeholder=${t.search}
+              @input=${(e) => {
+                this._query = e.target.value;
+              }}
+            ></ha-input>
+            <div class="tabs">
+              ${doms.map(
+                (d) => html`
+                  <button
+                    class="tab ${this._domain === d ? "on" : ""}"
+                    @click=${() => {
+                      this._domain = d;
+                    }}
+                  >
+                    ${d === "all" ? t.all : DOMAIN_LABELS[d][this._lang]}
+                    ${d !== "all" && counts[d] ? html`<span class="n">${counts[d]}</span>` : ""}
+                  </button>
                 `,
-            )}
-        </ul>
+              )}
+            </div>
+          </div>
 
-        <footer>
-          <ha-button @click=${this.save} .disabled=${this._saving}>
-            ${this._saving ? t.saving : t.save}
-          </ha-button>
-          ${this._savedFlash ? html`<span class="ok">${t.saved}</span>` : ""}
-        </footer>
-      </div>
+          <div class="meta">
+            <span>${this._selected.size} ${t.selected}</span>
+            <span class="actions">
+              <button @click=${this.selectAllVisible}>${t.selectAll}</button>
+              <button @click=${this.unselectAll}>${t.unselectAll}</button>
+            </span>
+          </div>
+
+          ${this._error ? html`<div class="err">${this._error}</div>` : ""}
+
+          <ul class="list">
+            ${this._visible.length === 0
+              ? html`<li class="none">${this._query ? t.emptyFilter : t.empty}</li>`
+              : this._visible.map(
+                  (e) => html`
+                    <li class="${this._selected.has(e.entity_id) ? "sel" : ""}">
+                      <label>
+                        <ha-checkbox
+                          .checked=${this._selected.has(e.entity_id)}
+                          @change=${() => this.toggle(e.entity_id)}
+                        ></ha-checkbox>
+                        <ha-icon
+                          .icon=${DOMAIN_LABELS[e.domain] ? DOMAIN_LABELS[e.domain].icon : "mdi:shape"}
+                        ></ha-icon>
+                        <span class="nm">${e.name}</span>
+                        <span class="id">${e.entity_id}</span>
+                      </label>
+                    </li>
+                  `,
+                )}
+          </ul>
+
+          <footer>
+            <ha-button @click=${this.save} .disabled=${this._saving}>
+              ${this._saving ? t.saving : t.save}
+            </ha-button>
+            ${this._savedFlash ? html`<span class="ok">${t.saved}</span>` : ""}
+          </footer>
+        </div>
+      </ha-top-app-bar-fixed>
     `;
   }
 
@@ -563,11 +570,11 @@ class KoryxRemotePanel extends LitElement {
     return css`
       :host {
         display: block;
-        padding: 16px;
       }
       .wrap {
         max-width: 720px;
         margin: 0 auto;
+        padding: 16px;
       }
       header {
         display: flex;
@@ -586,13 +593,9 @@ class KoryxRemotePanel extends LitElement {
       .titles {
         min-width: 0;
       }
-      h1 {
-        font-size: 1.5rem;
-        margin: 0;
-      }
       .sub {
         color: var(--secondary-text-color);
-        margin: 4px 0 0;
+        margin: 0;
       }
       /* Em tela estreita o logo e o titulo nao cabem lado a lado: o logo
          vai para cima e o bloco de texto ocupa a largura toda. */

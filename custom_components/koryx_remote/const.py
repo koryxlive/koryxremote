@@ -34,6 +34,7 @@ CONF_SLUG = "slug"
 CONF_URL = "url"
 CONF_PLAN = "plan"
 CONF_ENDS_AT = "ends_at"
+CONF_PAIR_CODE = "pair_code"
 
 # Entidades que o HA declara para a Alexa. Guardado nas options da entry, e nao
 # em `data`: o que o usuario escolhe depois de configurar pertence a `options`,
