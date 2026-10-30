@@ -61,5 +61,35 @@
         }
       }
     }
+  },
+  "domains": {
+    "light": "Lights",
+    "cover": "Covers",
+    "climate": "Climate",
+    "switch": "Switches",
+    "fan": "Fans",
+    "vacuum": "Vacuums",
+    "lock": "Locks",
+    "scene": "Scenes",
+    "script": "Scripts",
+    "media_player": "Media",
+    "humidifier": "Humidifiers",
+    "input_boolean": "Virtual switches"
+  },
+  "panel": {
+    "title": "Devices for Alexa",
+    "subtitle": "Only the ones selected here appear in the Alexa app.",
+    "search": "Search by name…",
+    "all": "All",
+    "selected": "selected",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Selection saved.",
+    "save_failed": "Could not save. Try again.",
+    "load_failed": "Could not load devices.",
+    "empty": "No devices found.",
+    "empty_filter": "Nothing matches that name in this filter.",
+    "select_all": "Select all visible",
+    "unselect_all": "Unselect all"
   }
 }

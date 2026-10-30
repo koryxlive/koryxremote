@@ -25,17 +25,28 @@ import {
  * painel lê e grava exatamente ali, pelo mesmo websocket que o formulário
  * nativo usa. Não há uma segunda cópia da seleção. O escopo de domínios vem
  * de `panel.config.domains` (passado pelo `panel.py` a partir de
- * `EXPOSABLE_DOMAINS`); sem config, o fallback é `Object.keys(DOMAIN_LABELS)`.
+ * `EXPOSABLE_DOMAINS`); sem config, o fallback é `Object.keys(DOMAIN_ICONS)`.
+ *
+ * **Nenhum texto aqui, só chave.** Os rótulos de domínio (`domains.<nome>`) e
+ * os textos da tela (`panel.<chave>`) vivem em `translations/*.json` e são
+ * lidos via `frontend/get_translations`. O JS só guarda o ícone de cada
+ * domínio, que não é texto traduzível. Sem tradução, a chave crua aparece —
+ * nunca um texto em português fixo no bundle.
  */
 
-const DOMAIN_LABELS = {
-  light: { pt: "Luzes", en: "Lights", icon: "mdi:lightbulb" },
-  cover: { pt: "Cortinas", en: "Covers", icon: "mdi:window-shutter" },
-  climate: { pt: "Clima", en: "Climate", icon: "mdi:thermostat" },
-  switch: { pt: "Tomadas", en: "Switches", icon: "mdi:toggle-switch" },
-  fan: { pt: "Ventiladores", en: "Fans", icon: "mdi:fan" },
-  vacuum: { pt: "Aspiradores", en: "Vacuums", icon: "mdi:robot-vacuum" },
-  lock: { pt: "Fechaduras", en: "Locks", icon: "mdi:lock" },
+const DOMAIN_ICONS = {
+  light: "mdi:lightbulb",
+  cover: "mdi:window-shutter",
+  climate: "mdi:thermostat",
+  switch: "mdi:toggle-switch",
+  fan: "mdi:fan",
+  vacuum: "mdi:robot-vacuum",
+  lock: "mdi:lock",
+  scene: "mdi:palette",
+  script: "mdi:script-text",
+  media_player: "mdi:cast",
+  humidifier: "mdi:air-humidifier",
+  input_boolean: "mdi:toggle-switch-off-outline",
 };
 
 /**
@@ -110,43 +121,6 @@ const renderLogo = () => html`
   </svg>
 `;
 
-const STRINGS = {
-  pt: {
-    title: "Dispositivos para a Alexa",
-    subtitle: "Só os marcados aqui aparecem no app da Alexa.",
-    search: "Buscar por nome…",
-    all: "Todos",
-    selected: "selecionados",
-    save: "Salvar",
-    saving: "Salvando…",
-    saved: "Seleção salva.",
-    saveFailed: "Não foi possível salvar. Tente de novo.",
-    loadFailed: "Não foi possível carregar os dispositivos.",
-    empty: "Nenhum dispositivo encontrado.",
-    emptyFilter: "Nada com esse nome neste filtro.",
-    clear: "Limpar",
-    selectAll: "Marcar todos os visíveis",
-    unselectAll: "Desmarcar todos",
-  },
-  en: {
-    title: "Devices for Alexa",
-    subtitle: "Only the ones selected here appear in the Alexa app.",
-    search: "Search by name…",
-    all: "All",
-    selected: "selected",
-    save: "Save",
-    saving: "Saving…",
-    saved: "Selection saved.",
-    saveFailed: "Could not save. Try again.",
-    loadFailed: "Could not load devices.",
-    empty: "No devices found.",
-    emptyFilter: "Nothing matches that name in this filter.",
-    clear: "Clear",
-    selectAll: "Select all visible",
-    unselectAll: "Unselect all",
-  },
-};
-
 class KoryxRemotePanel extends LitElement {
   static get properties() {
     return {
@@ -177,6 +151,10 @@ class KoryxRemotePanel extends LitElement {
     this._error = "";
     this._savedFlash = false;
     this._loadedOnce = false;
+    /** Textos traduzidos, achatados em `grupo.chave`. Ver `_loadTranslations`. */
+    this._t = {};
+    /** Idioma com que `_t` foi preenchido; se muda, o fetch é refeito. */
+    this._labelsLang = null;
     /**
      * Flow de options aberto no `_load`, esperando o `user_input`. Reaproveitar
      * o mesmo flow evita abrir um segundo só para salvar — e, como abrir não
@@ -189,20 +167,68 @@ class KoryxRemotePanel extends LitElement {
 
   updated(changed) {
     // O `hass` chega depois de o elemento montar; só então há websocket.
-    if (changed.has("hass") && this.hass && !this._loadedOnce) {
+    if (!changed.has("hass") || !this.hass) return;
+    if (!this._loadedOnce) {
       this._loadedOnce = true;
       this._load();
+      return;
     }
+    // Idioma do HA mudou: os textos vivem nas translations, então refaz o
+    // fetch (`_loadTranslations` sai cedo se o idioma for o mesmo).
+    this._loadTranslations();
   }
 
   get _lang() {
-    // `pt-BR` e `pt` compartilham o dicionário; o resto cai no inglês.
+    // Só para ordenar a lista (`localeCompare`): os textos vêm das translations.
     const l = (this.hass && this.hass.language) || "en";
     return l.toLowerCase().startsWith("pt") ? "pt" : "en";
   }
 
-  get _t() {
-    return STRINGS[this._lang];
+  /**
+   * Texto traduzido, achatado em `grupo.chave` (`panel.title`,
+   * `domains.light`). A chave é o fallback: sem tradução — ou antes do fetch
+   * terminar — aparece a chave, nunca um texto fixo no bundle.
+   */
+  _s(key) {
+    return (this._t && this._t[key]) || key;
+  }
+
+  /**
+   * Carrega as translations da integração: `domains.*` (rótulos dos chips) e
+   * `panel.*` (textos da tela).
+   *
+   * `category` no `frontend/get_translations` é a **seção de topo** do arquivo
+   * de translations (`domains`, `panel`) — não a palavra "component". O
+   * backend filtra por ela e devolve as chaves já achatadas em
+   * `component.koryx_remote.<categoria>.<chave>`, que é o que desmontamos para
+   * `grupo.chave` (o formato que o render consulta).
+   */
+  async _loadTranslations() {
+    const language = (this.hass && this.hass.language) || "en";
+    if (this._labelsLang === language) return;
+    // Falha aqui não derruba a lista: `_t` fica vazio e `_s` devolve a chave.
+    try {
+      const flat = {};
+      for (const group of ["domains", "panel"]) {
+        const resp = await this.hass.callWS({
+          type: "frontend/get_translations",
+          language,
+          category: group,
+          integration: "koryx_remote",
+        });
+        const prefix = `component.koryx_remote.${group}.`;
+        for (const [key, text] of Object.entries(resp.resources || {})) {
+          if (typeof text !== "string" || !key.startsWith(prefix)) continue;
+          flat[`${group}.${key.slice(prefix.length)}`] = text;
+        }
+      }
+      this._t = flat;
+      this._labelsLang = language;
+      this.requestUpdate();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("koryx panel: falha ao carregar traduções", err);
+    }
   }
 
   /**
@@ -247,6 +273,7 @@ class KoryxRemotePanel extends LitElement {
     this._loading = true;
     this._error = "";
     try {
+      await this._loadTranslations();
       const entryId = await this._myEntryId();
       if (!entryId) {
         this._entries = [];
@@ -280,7 +307,7 @@ class KoryxRemotePanel extends LitElement {
         a.name.localeCompare(b.name, this._lang, { sensitivity: "base" }),
       );
     } catch (err) {
-      this._error = this._t.loadFailed;
+      this._error = this._s("panel.load_failed");
       // eslint-disable-next-line no-console
       console.error("koryx panel: falha ao carregar", err);
     } finally {
@@ -359,11 +386,11 @@ class KoryxRemotePanel extends LitElement {
         : null;
     // Fonte de verdade: `config.domains` (= `EXPOSABLE_DOMAINS` no panel.py).
     // Fallback só se o painel foi registrado sem config (HA antigo / registro
-    // manual): as chaves de `DOMAIN_LABELS`, para não manter uma segunda lista
+    // manual): as chaves de `DOMAIN_ICONS`, para não manter uma segunda lista
     // hardcoded que esquece domínio novo.
     return fromConfig && fromConfig.length
       ? fromConfig
-      : Object.keys(DOMAIN_LABELS);
+      : Object.keys(DOMAIN_ICONS);
   }
 
   async _fetchExposable() {
@@ -437,7 +464,7 @@ class KoryxRemotePanel extends LitElement {
       this._pendingFlowId = null;
       this._handlePostSave(result);
     } catch (err) {
-      this._error = this._t.saveFailed;
+      this._error = this._s("panel.save_failed");
       // eslint-disable-next-line no-console
       console.error("koryx panel: falha ao salvar", err);
     } finally {
@@ -463,22 +490,22 @@ class KoryxRemotePanel extends LitElement {
   }
 
   render() {
-    const t = this._t;
+    const t = (key) => this._s(`panel.${key}`);
     if (this._loading) {
       return html`
         <ha-top-app-bar-fixed .narrow=${this.narrow}>
-          <span slot="title">${t.title}</span>
+          <span slot="title">${t("title")}</span>
           <div class="wrap"><ha-circular-progress active></ha-circular-progress></div>
         </ha-top-app-bar-fixed>
       `;
     }
 
     // Chips na ordem de `EXPOSABLE_DOMAINS` (via config), não na ordem do
-    // objeto de rótulos — assim um domínio novo aparece no mesmo lugar do
+    // objeto de ícones — assim um domínio novo aparece no mesmo lugar do
     // const.py sem depender da ordem de inserção do JS.
     const doms = [
       "all",
-      ...this._allowedDomains().filter((d) => DOMAIN_LABELS[d]),
+      ...this._allowedDomains().filter((d) => DOMAIN_ICONS[d]),
     ];
     const counts = {};
     for (const e of this._entries) {
@@ -487,12 +514,12 @@ class KoryxRemotePanel extends LitElement {
 
     return html`
       <ha-top-app-bar-fixed .narrow=${this.narrow}>
-        <span slot="title">${t.title}</span>
+        <span slot="title">${t("title")}</span>
         <div class="wrap">
           <header>
             ${renderLogo()}
             <div class="titles">
-              <p class="sub">${t.subtitle}</p>
+              <p class="sub">${t("subtitle")}</p>
             </div>
           </header>
 
@@ -500,8 +527,8 @@ class KoryxRemotePanel extends LitElement {
             <ha-input
               class="search"
               .value=${this._query}
-              .label=${t.search}
-              .placeholder=${t.search}
+              .label=${t("search")}
+              .placeholder=${t("search")}
               @input=${(e) => {
                 this._query = e.target.value;
               }}
@@ -515,7 +542,7 @@ class KoryxRemotePanel extends LitElement {
                       this._domain = d;
                     }}
                   >
-                    ${d === "all" ? t.all : DOMAIN_LABELS[d][this._lang]}
+                    ${d === "all" ? t("all") : this._s(`domains.${d}`)}
                     ${d !== "all" && counts[d] ? html`<span class="n">${counts[d]}</span>` : ""}
                   </button>
                 `,
@@ -524,10 +551,10 @@ class KoryxRemotePanel extends LitElement {
           </div>
 
           <div class="meta">
-            <span>${this._selected.size} ${t.selected}</span>
+            <span>${this._selected.size} ${t("selected")}</span>
             <span class="actions">
-              <button @click=${this.selectAllVisible}>${t.selectAll}</button>
-              <button @click=${this.unselectAll}>${t.unselectAll}</button>
+              <button @click=${this.selectAllVisible}>${t("select_all")}</button>
+              <button @click=${this.unselectAll}>${t("unselect_all")}</button>
             </span>
           </div>
 
@@ -535,7 +562,7 @@ class KoryxRemotePanel extends LitElement {
 
           <ul class="list">
             ${this._visible.length === 0
-              ? html`<li class="none">${this._query ? t.emptyFilter : t.empty}</li>`
+              ? html`<li class="none">${this._query ? t("empty_filter") : t("empty")}</li>`
               : this._visible.map(
                   (e) => html`
                     <li class="${this._selected.has(e.entity_id) ? "sel" : ""}">
@@ -545,7 +572,7 @@ class KoryxRemotePanel extends LitElement {
                           @change=${() => this.toggle(e.entity_id)}
                         ></ha-checkbox>
                         <ha-icon
-                          .icon=${DOMAIN_LABELS[e.domain] ? DOMAIN_LABELS[e.domain].icon : "mdi:shape"}
+                          .icon=${DOMAIN_ICONS[e.domain] || "mdi:shape"}
                         ></ha-icon>
                         <span class="nm">${e.name}</span>
                         <span class="id">${e.entity_id}</span>
@@ -557,9 +584,9 @@ class KoryxRemotePanel extends LitElement {
 
           <footer>
             <ha-button @click=${this.save} .disabled=${this._saving}>
-              ${this._saving ? t.saving : t.save}
+              ${this._saving ? t("saving") : t("save")}
             </ha-button>
-            ${this._savedFlash ? html`<span class="ok">${t.saved}</span>` : ""}
+            ${this._savedFlash ? html`<span class="ok">${t("saved")}</span>` : ""}
           </footer>
         </div>
       </ha-top-app-bar-fixed>

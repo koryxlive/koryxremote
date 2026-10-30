@@ -61,5 +61,35 @@
         }
       }
     }
+  },
+  "domains": {
+    "light": "Luzes",
+    "cover": "Cortinas",
+    "climate": "Clima",
+    "switch": "Tomadas",
+    "fan": "Ventiladores",
+    "vacuum": "Aspiradores",
+    "lock": "Fechaduras",
+    "scene": "Cenas",
+    "script": "Scripts",
+    "media_player": "Mídia",
+    "humidifier": "Umidificadores",
+    "input_boolean": "Interruptores virtuais"
+  },
+  "panel": {
+    "title": "Dispositivos para a Alexa",
+    "subtitle": "Só os marcados aqui aparecem no app da Alexa.",
+    "search": "Buscar por nome…",
+    "all": "Todos",
+    "selected": "selecionados",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "saved": "Seleção salva.",
+    "save_failed": "Não foi possível salvar. Tente de novo.",
+    "load_failed": "Não foi possível carregar os dispositivos.",
+    "empty": "Nenhum dispositivo encontrado.",
+    "empty_filter": "Nada com esse nome neste filtro.",
+    "select_all": "Marcar todos os visíveis",
+    "unselect_all": "Desmarcar todos"
   }
 }

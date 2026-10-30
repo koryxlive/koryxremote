@@ -463,15 +463,16 @@ async def _async_system_user_id(
 def _normalize_range_instance(directive: dict[str, Any]) -> None:
     """Repõe o `instance` que a Alexa omite no `SetRangeValue` de range único.
 
-    **O bug.** No app, o slider de percentual (cortina, ventilador, aspirador)
-    manda `Alexa.RangeController/SetRangeValue` com o `rangeValue` no payload,
-    mas **sem** a chave `instance` no header. O `AlexaDirective.load_entity` do
-    core só lê `instance` do *header*
+    **O bug.** No app, o slider de percentual (cortina, ventilador, aspirador,
+    umidificador) manda `Alexa.RangeController/SetRangeValue` com o
+    `rangeValue` no payload, mas **sem** a chave `instance` no header. O
+    `AlexaDirective.load_entity` do core só lê `instance` do *header*
     (`self._directive[API_HEADER]["instance"]`), então ela fica `None`; o
     `async_api_set_range` compara a instance com a string do domínio
-    (`cover.position`, `fan.percentage`, `vacuum.fan_speed`), não casa, cai no
-    `else` e levanta `DIRECTIVE_NOT_SUPPORTED`. A Alexa mostra "não está
-    respondendo", mesmo o `Discover` anunciando a capability certa.
+    (`cover.position`, `fan.percentage`, `vacuum.fan_speed`,
+    `humidifier.humidity`), não casa, cai no `else` e levanta
+    `DIRECTIVE_NOT_SUPPORTED`. A Alexa mostra "não está respondendo", mesmo o
+    `Discover` anunciando a capability certa.
 
     **Por que a Alexa omite.** A `instance` só é obrigatória quando o endpoint
     declara **mais de uma** interface daquele tipo (duas `RangeController`).
@@ -518,6 +519,10 @@ def _normalize_range_instance(directive: dict[str, Any]) -> None:
         from homeassistant.components import vacuum
 
         header["instance"] = f"{vacuum.DOMAIN}.{vacuum.ATTR_FAN_SPEED}"
+    elif domain == "humidifier":
+        from homeassistant.components import humidifier
+
+        header["instance"] = f"{humidifier.DOMAIN}.{humidifier.ATTR_HUMIDITY}"
 
 
 async def async_handle_directive(

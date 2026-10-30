@@ -60,13 +60,19 @@ CONF_REPORT_STATE = "report_state"
 # `climate` em `SetTargetTemperature`, `fan` em percentual ou `vacuum` em
 # start/return e o `ENTITY_ADAPTERS` do core, por dominio. Ampliar o escopo e
 # acrescentar um nome nesta tupla, nao mexer na logica. Cada dominio novo so
-# precisa entrar aqui e ter rotulo/icone no painel (`DOMAIN_LABELS`).
+# precisa entrar aqui, ter rotulo em `translations/*.json` (`domains.<nome>`) e
+# icone em `DOMAIN_ICONS` do painel.
 #
 # `lock` entra: o core ja traduz Lock/Unlock; o PIN de 4 digitos e so no app
 # da Alexa (nao chega ao HA). `alarm_control_panel` continua fora — o disarm
 # pode carregar codigo no directive e e outro risco. Ver `docs/alexa.md`.
 # `sensor`/`binary_sensor`/`number` tambem ficam: so reportam, nunca executam,
 # e so poluem o app.
+#
+# `scene`/`script` viram cena na Alexa (`SceneController`), `media_player`
+# ganha play/pause/volume, `humidifier` liga e ajusta a umidade e
+# `input_boolean` e o interruptor virtual (liga/desliga). Todos executam algo;
+# nenhum e "so reporta".
 EXPOSABLE_DOMAINS = (
     "light",
     "cover",
@@ -75,6 +81,11 @@ EXPOSABLE_DOMAINS = (
     "fan",
     "vacuum",
     "lock",
+    "scene",
+    "script",
+    "media_player",
+    "humidifier",
+    "input_boolean",
 )
 
 # Prefixo do icone da marca na sidebar. O HA nao aceita imagem em `sidebar_icon`
