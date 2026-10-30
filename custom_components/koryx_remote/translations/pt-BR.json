@@ -73,9 +73,11 @@
     "scene": "Cenas",
     "script": "Scripts",
     "media_player": "Mídia",
-    "humidifier": "Umidificadores",
-    "input_boolean": "Interruptores virtuais"
-  },
+  "humidifier": "Umidificadores",
+  "input_boolean": "Interruptores virtuais",
+  "water_heater": "Aquecedores",
+  "valve": "Válvulas"
+},
   "panel": {
     "title": "Dispositivos para a Alexa",
     "subtitle": "Só os marcados aqui aparecem no app da Alexa.",

@@ -464,13 +464,13 @@ def _normalize_range_instance(directive: dict[str, Any]) -> None:
     """Repõe o `instance` que a Alexa omite no `SetRangeValue` de range único.
 
     **O bug.** No app, o slider de percentual (cortina, ventilador, aspirador,
-    umidificador) manda `Alexa.RangeController/SetRangeValue` com o
+    umidificador, válvula) manda `Alexa.RangeController/SetRangeValue` com o
     `rangeValue` no payload, mas **sem** a chave `instance` no header. O
     `AlexaDirective.load_entity` do core só lê `instance` do *header*
     (`self._directive[API_HEADER]["instance"]`), então ela fica `None`; o
     `async_api_set_range` compara a instance com a string do domínio
     (`cover.position`, `fan.percentage`, `vacuum.fan_speed`,
-    `humidifier.humidity`), não casa, cai no `else` e levanta
+    `humidifier.humidity`, `valve.position`), não casa, cai no `else` e levanta
     `DIRECTIVE_NOT_SUPPORTED`. A Alexa mostra "não está respondendo", mesmo o
     `Discover` anunciando a capability certa.
 
@@ -523,6 +523,10 @@ def _normalize_range_instance(directive: dict[str, Any]) -> None:
         from homeassistant.components import humidifier
 
         header["instance"] = f"{humidifier.DOMAIN}.{humidifier.ATTR_HUMIDITY}"
+    elif domain == "valve":
+        from homeassistant.components import valve
+
+        header["instance"] = f"{valve.DOMAIN}.{valve.ATTR_POSITION}"
 
 
 async def async_handle_directive(
@@ -554,8 +558,9 @@ async def async_handle_directive(
 
     # Antes de entregar ao core: repõe o `instance` que a Alexa omite no
     # `SetRangeValue` quando o endpoint só tem uma RangeController (cortina,
-    # ventilador, aspirador). Sem isto o core recusa com `INVALID_DIRECTIVE`
-    # e a Alexa mostra "não está respondendo". Ver `_normalize_range_instance`.
+    # ventilador, aspirador, válvula). Sem isto o core recusa com
+    # `INVALID_DIRECTIVE` e a Alexa mostra "não está respondendo". Ver
+    # `_normalize_range_instance`.
     _normalize_range_instance(directive)
 
     config = KoryxAlexaConfig(hass, entry)

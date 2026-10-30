@@ -47,6 +47,8 @@ const DOMAIN_ICONS = {
   media_player: "mdi:cast",
   humidifier: "mdi:air-humidifier",
   input_boolean: "mdi:toggle-switch-off-outline",
+  water_heater: "mdi:water-boiler",
+  valve: "mdi:valve",
 };
 
 /**

@@ -71,8 +71,10 @@ CONF_REPORT_STATE = "report_state"
 #
 # `scene`/`script` viram cena na Alexa (`SceneController`), `media_player`
 # ganha play/pause/volume, `humidifier` liga e ajusta a umidade e
-# `input_boolean` e o interruptor virtual (liga/desliga). Todos executam algo;
-# nenhum e "so reporta".
+# `input_boolean` e o interruptor virtual (liga/desliga). `water_heater` vira
+# termostato (mesmo `ClimateCapabilities` do `climate`) e `valve` abre/fecha
+# pela posicao (`RangeController`) ou estado (`ModeController`). Todos executam
+# algo; nenhum e "so reporta".
 EXPOSABLE_DOMAINS = (
     "light",
     "cover",
@@ -86,6 +88,8 @@ EXPOSABLE_DOMAINS = (
     "media_player",
     "humidifier",
     "input_boolean",
+    "water_heater",
+    "valve",
 )
 
 # Prefixo do icone da marca na sidebar. O HA nao aceita imagem em `sidebar_icon`

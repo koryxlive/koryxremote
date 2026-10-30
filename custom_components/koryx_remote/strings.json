@@ -73,9 +73,11 @@
     "scene": "Scenes",
     "script": "Scripts",
     "media_player": "Media",
-    "humidifier": "Humidifiers",
-    "input_boolean": "Virtual switches"
-  },
+  "humidifier": "Humidifiers",
+  "input_boolean": "Virtual switches",
+  "water_heater": "Water heaters",
+  "valve": "Valves"
+},
   "panel": {
     "title": "Devices for Alexa",
     "subtitle": "Only the ones selected here appear in the Alexa app.",
