@@ -610,3 +610,65 @@ async def async_enable_report_state(
 
     config = KoryxAlexaConfig(hass, entry)
     return await state_report.async_enable_proactive_mode(hass, config)  # type: ignore[arg-type]
+
+
+async def async_sync_alexa_catalog(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    *,
+    to_add: list[str],
+    to_remove: list[str],
+) -> None:
+    """Avisa a Alexa quando o catálogo muda — sem esperar rediscovery.
+
+    A Alexa cacheia o `Discover` até receber `DeleteReport` / `AddOrUpdateReport`.
+    Sem isto, um dispositivo desmarcado ou renomeado no HA continua respondendo
+    no app/voz com `NO_SUCH_ENDPOINT`, enquanto outro id válido da mesma casa
+    funciona — o sintoma que parece "intermitente".
+
+    Reusa os helpers do core (`async_send_delete_message` /
+    `async_send_add_or_update_message`), no mesmo caminho do Report State: o HA
+    posta em `config.endpoint` (`/api/v1/alexa/events`) e a API repõe token +
+    prefixo da casa antes do event gateway.
+
+    Só envia o que o diff pediu. Não manda delete de id que ainda está exposto.
+    Sem `endpoint` (report state desligado) não há para onde postar — sai
+    silencioso, como o ChangeReport nesse estado.
+    """
+    if not to_add and not to_remove:
+        return
+
+    config = KoryxAlexaConfig(hass, entry)
+    if config.endpoint is None:
+        return
+
+    # Nunca deletar o que ainda está exposto **e** existe: um diff errado
+    # tiraria da Alexa um dispositivo que ainda funciona. Entidade na seleção
+    # mas já apagada do HA (registry remove) continua elegível ao DeleteReport.
+    exposed = set(entry.options.get(CONF_EXPOSED_ENTITIES) or [])
+    remove = [
+        entity_id
+        for entity_id in to_remove
+        if not (entity_id in exposed and hass.states.get(entity_id) is not None)
+    ]
+    add = [entity_id for entity_id in to_add if entity_id in exposed]
+    if not remove and not add:
+        return
+
+    from homeassistant.components.alexa import state_report
+
+    try:
+        if remove:
+            await state_report.async_send_delete_message(
+                hass, config, remove  # type: ignore[arg-type]
+            )
+        if add:
+            await state_report.async_send_add_or_update_message(
+                hass, config, add  # type: ignore[arg-type]
+            )
+    except Exception:  # noqa: BLE001 — falha de sync não pode derrubar o túnel
+        _LOGGER.exception(
+            "Falha ao sincronizar catálogo Alexa (add=%s remove=%s)",
+            add,
+            remove,
+        )

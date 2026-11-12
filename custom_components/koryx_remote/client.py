@@ -36,6 +36,8 @@ from .version import async_integration_version
 PLAN_LABELS = {
     "trial": "Trial",
     "basic": "Básico",
+    "pro": "Pro",
+    "integrator": "Integrador",
 }
 
 # Espelha `DEFAULTS.heartbeatIntervalMs`/`heartbeatDeadlineMs` de
@@ -95,6 +97,9 @@ class KoryxLink:
         self.hass = hass
         self.entry = entry
         self.connected = False
+        # Diagnóstico exposto no binary_sensor "Conectado" (atributos).
+        self.status_reason = "connecting"
+        self.reconnect_count = 0
         # Vem do `/agents/link` e do `AUTH_OK`. O sensor de vencimento lê daqui.
         self.plan = str(entry.data.get(CONF_PLAN) or "trial")
         self.ends_at = _parse_datetime(entry.data.get(CONF_ENDS_AT))
@@ -131,6 +136,17 @@ class KoryxLink:
     def plan_label(self) -> str:
         """Nome do plano para mostrar. Desconhecido volta cru, não inventado."""
         return PLAN_LABELS.get(self.plan, self.plan)
+
+    @property
+    def external_url(self) -> str:
+        """URL externa atual da casa (slug ou domínio próprio)."""
+        return self._external_url
+
+    def _set_status_reason(self, reason: str) -> None:
+        if self.status_reason == reason:
+            return
+        self.status_reason = reason
+        self._notify()
 
     async def update_external_url(self, url: Any) -> None:
         """Aponta o `external_url` do HA para a URL que o Relay mandou.
@@ -257,6 +273,9 @@ class KoryxLink:
     async def run(self) -> None:
         delay = 1
         while not self._stop.is_set():
+            self._set_status_reason(
+                "connecting" if self.reconnect_count == 0 else "reconnecting"
+            )
             self._ultimo_momento = asyncio.get_running_loop().time()
             self.last_stall_s = None
             try:
@@ -266,6 +285,7 @@ class KoryxLink:
                 raise
             except TrialEnded:
                 self._set_connected(False)
+                self._set_status_reason("plan_expired")
                 delay = TRIAL_RETRY_SECONDS
                 # Corte de acesso: para de empurrar ChangeReport para a Amazon
                 # enquanto a assinatura não voltar. Reativado no AUTH_OK.
@@ -278,17 +298,34 @@ class KoryxLink:
                 # liga o sensor de "Conectado" (a casa esta fora do ar e o HA
                 # precisa dizer isso).
                 self._set_connected(False)
+                self._set_status_reason("credential_rejected")
                 _LOGGER.error(
                     "Koryx Remote: a credencial desta casa foi recusada pelo servidor. "
                     "Entre no painel Koryx Remote e refaca a instalacao no Home Assistant "
                     "(Configuracoes > Dispositivos e Servicos > Koryx Remote). "
                     "O tunel nao sera mais tentado ate a reconfiguracao."
                 )
+                from homeassistant.components import persistent_notification
+
+                persistent_notification.async_create(
+                    self.hass,
+                    (
+                        "A credencial desta casa foi recusada pelo servidor Koryx Remote "
+                        "(provavelmente houve um novo pareamento com a mesma conta).\n\n"
+                        "Reconfigure a integração em **Configurações → Dispositivos e "
+                        "serviços → Koryx Remote** e faça o login novamente."
+                    ),
+                    title="Koryx Remote: reautenticação necessária",
+                    notification_id=(
+                        f"{DOMAIN}_credential_rejected_{self.entry.entry_id}"
+                    ),
+                )
                 return
             except Exception:
                 self._set_connected(False)
             if self._stop.is_set():
                 break
+            self.reconnect_count += 1
             try:
                 await asyncio.wait_for(self._stop.wait(), delay)
             except TimeoutError:
@@ -398,6 +435,12 @@ class KoryxLink:
             return authed
         kind = frame.get("type")
         if kind == "AUTH_OK":
+            from homeassistant.components import persistent_notification
+
+            persistent_notification.async_dismiss(
+                self.hass,
+                f"{DOMAIN}_credential_rejected_{self.entry.entry_id}",
+            )
             self._set_connected(True)
             # Handshake: plano e vencimento vêm junto para o sensor não ficar
             # preso ao que foi gravado no login.
@@ -591,6 +634,8 @@ class KoryxLink:
         if self.connected == connected:
             return
         self.connected = connected
+        if connected:
+            self.status_reason = "connected"
         self._notify()
 
     def _notify(self) -> None:

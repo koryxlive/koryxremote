@@ -152,8 +152,8 @@ class KoryxUpdateCoordinator(DataUpdateCoordinator[UpdateInfo]):
         mensagem = (
             f"Koryx Remote **{info.latest}** está disponível "
             f"(você tem {info.installed}).\n\n"
-            f"Atualize pelo **HACS** → Integrações → Koryx Remote e reinicie "
-            f"o Home Assistant.\n\n"
+            f"Atualize em **Configurações → Marketplace → Koryx Remote** e "
+            f"reinicie o Home Assistant.\n\n"
             f"[Notas da versão]({link})"
         )
         persistent_notification.async_create(

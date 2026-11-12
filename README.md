@@ -11,7 +11,7 @@ para o Koryx Remote e devolve a interface original do Home Assistant em
 ## Instalação
 
 1. Crie a conta em [koryxremote.com](https://koryxremote.com).
-2. No Home Assistant, instale esta integração (HACS ou cópia manual, abaixo).
+2. No Home Assistant, instale esta integração pelo **Marketplace** (`Configurações → Marketplace`) ou cópia manual (abaixo).
 3. Reinicie o Home Assistant.
 4. Abra [Instalar no Home Assistant](https://my.home-assistant.io/redirect/config_flow_start/?domain=koryx_remote)
    e entre com o e-mail e a senha da sua conta Koryx Remote.
@@ -52,14 +52,24 @@ Reserve `https://{sua-casa}.koryx.one` para quando estiver fora.
 > do browser: o certificado HTTPS fica na VPS do Koryx, não no HA. Apontar o
 > nome para o IP local quebra o HTTPS. Use a URL local no favorito.
 
-### Pelo HACS
+### Pelo Marketplace do Home Assistant
+
+Recomendado no **Home Assistant 2026.11+**:
+
+1. **Configurações → Marketplace**.
+2. Busque **Koryx Remote** e instale a integração.
+3. Reinicie o Home Assistant.
+
+### Home Assistant anterior a 2026.11 (HACS legado)
+
+Se o seu HA ainda não tem Marketplace:
 
 1. HACS → Integrações → os três pontos → **Repositório customizado**.
 2. URL: `https://github.com/koryxlive/koryxremote`
 3. Categoria: **Integration**.
 4. Instale **Koryx Remote** e reinicie o Home Assistant.
 
-### Manual (sem HACS)
+### Manual (sem Marketplace)
 
 Baixe [koryx_remote.zip](https://koryxremote.com/ha/koryx_remote.zip), extraia em
 `/config` do Home Assistant (fica `custom_components/koryx_remote`) e reinicie.
@@ -73,6 +83,36 @@ Baixe [koryx_remote.zip](https://koryxremote.com/ha/koryx_remote.zip), extraia e
 - Os bytes do HTTP e do WebSocket passam pelo túnel como estão. O Koryx não
   lê o que você faz no seu Home Assistant.
 - A senha da conta Koryx é usada uma vez, no login. Ela não fica gravada.
+
+## Avaliação e assinatura
+
+- Todo cadastro começa com **15 dias de avaliação**, ligados à **conta** e à
+  **instalação** no servidor — não ao dispositivo onde o HA roda.
+- **Atualizar a integração** (Marketplace, HACS legado ou zip) **não reinicia** o prazo.
+- No **vencimento** do trial ou do plano pago, o servidor responde `PLAN_EXPIRED`:
+  o túnel e a Alexa **pausam**. Depois de renovar em [koryxremote.com](https://koryxremote.com),
+  o acesso **volta em até ~60 s** (backoff de reconexão após vencimento).
+- Planos **Basic**, **Pro** (até 3 casas) e **Integrador** (casas ilimitadas +
+  domínio próprio) são contratados no painel; pagamento via **Pix** ou **cartão**
+  (Efí).
+
+## Privacidade e escopo
+
+| Faz | Não faz |
+| --- | --- |
+| Mantém túnel WebSocket de saída casa → nuvem | Não abre portas no roteador |
+| Guarda credencial do agente (hash), slug, versão da integração e entidades expostas à Alexa | Não guarda senha da conta Koryx no HA |
+| Encaminha HTTP/WS do seu HA para quem acessa o endereço público | Não inspeciona estados, automações nem gravações |
+| Envia comandos de voz da Alexa só para entidades que você marcou no painel | Não sincroniza o banco inteiro do HA |
+
+## Diagnóstico rápido
+
+| Sensor / situação | O que significa | O que fazer |
+| --- | --- | --- |
+| **Conectado** = ligado | Túnel ativo; `external_url` acessível | Nada — operação normal |
+| **Conectado** = desligado, estado **Reconectando** | Queda de rede ou Relay sem resposta | Espere; confira internet da casa e status em koryxremote.com |
+| **Plano vencido** / `PLAN_EXPIRED` nos logs | Trial ou assinatura expirou | Renove em koryxremote.com → `/app/planos` |
+| **Credencial recusada** / `AUTH_FAILED` (4003) | Agente revogado (desconectar, trocar senha, nova casa) | Refaça o pareamento (login ou código) no config flow |
 
 ## Requisitos
 

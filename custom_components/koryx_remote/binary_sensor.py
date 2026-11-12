@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -41,6 +43,15 @@ class KoryxConnectedSensor(BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         return self._link.connected
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "status_reason": self._link.status_reason,
+            "external_url": self._link.external_url,
+            "last_stall_s": self._link.last_stall_s,
+            "reconnect_count": self._link.reconnect_count,
+        }
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self._link.add_listener(self.schedule_update_ha_state))

@@ -1,11 +1,12 @@
 {
   "domain": "koryx_remote",
   "name": "Koryx Remote",
-  "codeowners": [],
+  "codeowners": ["@koryxlive"],
+  "issue_tracker": "https://github.com/koryxlive/koryxremote/issues",
   "config_flow": true,
   "dependencies": ["frontend", "http", "panel_custom"],
   "documentation": "https://koryxremote.com",
   "iot_class": "cloud_push",
   "requirements": [],
-  "version": "0.2.44"
+  "version": "0.2.46"
 }

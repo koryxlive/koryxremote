@@ -419,6 +419,177 @@ class KoryxRemotePanel extends LitElement {
     });
   }
 
+  /**
+   * Entidades da integracao no state do HA (sem websocket extra).
+   * Os ids seguem binary_sensor.koryx_remote_* e sensor.koryx_remote_*.
+   */
+  _koryxEntityStates() {
+    const states = (this.hass && this.hass.states) || {};
+    const binary = [];
+    const sensors = [];
+    for (const [entityId, state] of Object.entries(states)) {
+      if (!state || typeof state !== "object") continue;
+      if (entityId.startsWith("binary_sensor.koryx_remote_")) {
+        binary.push(state);
+      } else if (entityId.startsWith("sensor.koryx_remote_")) {
+        sensors.push(state);
+      }
+    }
+    return { binary, sensors };
+  }
+
+  _pickBinaryWithReason(binaryStates) {
+    for (const st of binaryStates) {
+      const attrs = st.attributes || {};
+      if (typeof attrs.status_reason === "string") return st;
+    }
+    return binaryStates[0] || null;
+  }
+
+  _pickSensorWithAttr(sensorStates, attr) {
+    for (const st of sensorStates) {
+      const attrs = st.attributes || {};
+      if (attr in attrs) return st;
+    }
+    return null;
+  }
+
+  /**
+   * Badge do tunel: status_reason no binary_sensor, senao state on/off.
+   * Retorno so com chaves panel.* (sem texto visivel fixo).
+   */
+  _tunnelBadge(connectedState) {
+    if (!connectedState) {
+      return { tone: "muted", labelKey: "status_unavailable" };
+    }
+    const attrs = connectedState.attributes || {};
+    const reason = attrs.status_reason;
+    const on = connectedState.state === "on";
+    const byReason = {
+      connected: { tone: "ok", labelKey: "status_connected" },
+      reconnecting: { tone: "warn", labelKey: "status_reconnecting" },
+      connecting: { tone: "warn", labelKey: "status_connecting" },
+      plan_expired: { tone: "err", labelKey: "status_plan_expired" },
+      credential_rejected: { tone: "err", labelKey: "status_credential_rejected" },
+    };
+    if (typeof reason === "string" && byReason[reason]) return byReason[reason];
+    if (on) return byReason.connected;
+    return { tone: "err", labelKey: "status_disconnected" };
+  }
+
+  /** Dados prontos para o card de status (testavel via extracao no lifecycle). */
+  _installStatusView() {
+    const { binary, sensors } = this._koryxEntityStates();
+    const connected = this._pickBinaryWithReason(binary);
+    const badge = this._tunnelBadge(connected);
+    const attrs = (connected && connected.attributes) || {};
+    const externalUrl =
+      typeof attrs.external_url === "string" && attrs.external_url.trim()
+        ? attrs.external_url.trim()
+        : null;
+
+    const planSt = this._pickSensorWithAttr(sensors, "plan_id");
+    const planValue =
+      planSt && typeof planSt.state === "string" && planSt.state !== "unknown"
+        ? planSt.state
+        : null;
+
+    const expirySt = this._pickSensorWithAttr(sensors, "days_remaining");
+    let expiryValue = null;
+    if (expirySt) {
+      const raw = expirySt.state;
+      if (raw === "sem_vencimento") {
+        expiryValue = { kind: "none" };
+      } else if (typeof raw === "string" && raw && raw !== "unknown" && raw !== "unavailable") {
+        expiryValue = { kind: "date", value: raw };
+      }
+    }
+
+    const versionSt = this._pickSensorWithAttr(sensors, "update_available");
+    const verAttrs = (versionSt && versionSt.attributes) || {};
+    const installed =
+      versionSt && typeof versionSt.state === "string" && versionSt.state !== "unknown"
+        ? versionSt.state
+        : null;
+    const latest =
+      typeof verAttrs.latest_version === "string" ? verAttrs.latest_version : null;
+    const updateAvailable = Boolean(verAttrs.update_available);
+
+    return {
+      badge,
+      externalUrl,
+      planValue,
+      expiryValue,
+      installed,
+      latest,
+      updateAvailable,
+    };
+  }
+
+  _renderInstallStatus(t) {
+    const view = this._installStatusView();
+    const badgeText = t(view.badge.labelKey);
+
+    return html`
+      <section class="status-card">
+        <div class="status-head">
+          <h2 class="status-title">${t("status_title")}</h2>
+          <span class="status-badge tone-${view.badge.tone}">${badgeText}</span>
+        </div>
+        <div class="status-grid">
+          <div class="status-row">
+            <dt>${t("tunnel_label")}</dt>
+            <dd>${badgeText}</dd>
+          </div>
+          <div class="status-row">
+            <dt>${t("remote_address_label")}</dt>
+            <dd>
+              ${view.externalUrl
+                ? html`<a
+                    href=${view.externalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >${view.externalUrl}</a
+                  >`
+                : html`<span class="muted">${t("status_unavailable")}</span>`}
+            </dd>
+          </div>
+          <div class="status-row">
+            <dt>${t("plan_label")}</dt>
+            <dd>
+              ${view.planValue
+                ? html`<span>${view.planValue}</span>`
+                : html`<span class="muted">${t("status_unavailable")}</span>`}
+              ${view.expiryValue
+                ? view.expiryValue.kind === "none"
+                  ? html`<span class="status-sub">${t("no_expiry")}</span>`
+                  : html`<span class="status-sub"
+                      >${t("expires_label")}: ${view.expiryValue.value}</span
+                    >`
+                : ""}
+            </dd>
+          </div>
+          <div class="status-row">
+            <dt>${t("version_label")}</dt>
+            <dd>
+              ${view.installed
+                ? html`<span>${view.installed}</span>`
+                : html`<span class="muted">${t("status_unavailable")}</span>`}
+              ${view.updateAvailable && view.latest
+                ? html`<span class="status-pill warn">${t("update_available")} ${view.latest}</span>`
+                : ""}
+            </dd>
+          </div>
+        </div>
+        <p class="status-portal">
+          <a href="https://koryxremote.com" target="_blank" rel="noopener noreferrer"
+            >${t("open_portal")}</a
+          >
+        </p>
+      </section>
+    `;
+  }
+
   toggle(entityId) {
     const next = new Set(this._selected);
     if (next.has(entityId)) next.delete(entityId);
@@ -525,6 +696,8 @@ class KoryxRemotePanel extends LitElement {
             </div>
           </header>
 
+          ${this._renderInstallStatus(t)}
+
           <div class="bar">
             <ha-input
               class="search"
@@ -625,6 +798,118 @@ class KoryxRemotePanel extends LitElement {
       .sub {
         color: var(--secondary-text-color);
         margin: 0;
+      }
+      .status-card {
+        border: 1px solid var(--divider-color);
+        background: var(--card-background-color);
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+      }
+      .status-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .status-title {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--primary-text-color);
+      }
+      .status-badge {
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--divider-color);
+      }
+      .status-badge.tone-ok {
+        color: var(--success-color, var(--primary-color));
+        border-color: color-mix(in srgb, var(--success-color, var(--primary-color)) 45%, var(--divider-color));
+        background: color-mix(in srgb, var(--success-color, var(--primary-color)) 12%, transparent);
+      }
+      .status-badge.tone-warn {
+        color: var(--warning-color);
+        border-color: color-mix(in srgb, var(--warning-color) 45%, var(--divider-color));
+        background: color-mix(in srgb, var(--warning-color) 12%, transparent);
+      }
+      .status-badge.tone-err {
+        color: var(--error-color);
+        border-color: color-mix(in srgb, var(--error-color) 45%, var(--divider-color));
+        background: color-mix(in srgb, var(--error-color) 12%, transparent);
+      }
+      .status-badge.tone-muted {
+        color: var(--secondary-text-color);
+      }
+      .status-grid {
+        margin: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px 16px;
+      }
+      .status-row {
+        margin: 0;
+        min-width: 0;
+      }
+      .status-row dt {
+        margin: 0 0 4px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--secondary-text-color);
+      }
+      .status-row dd {
+        margin: 0;
+        color: var(--primary-text-color);
+        font-size: 0.92rem;
+        word-break: break-word;
+      }
+      .status-row a {
+        color: var(--primary-color);
+      }
+      .status-sub {
+        display: block;
+        margin-top: 4px;
+        font-size: 0.82rem;
+        color: var(--secondary-text-color);
+      }
+      .status-pill {
+        display: inline-block;
+        margin-left: 8px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+      .status-pill.warn {
+        color: var(--warning-color);
+        background: color-mix(in srgb, var(--warning-color) 14%, transparent);
+      }
+      .muted {
+        color: var(--secondary-text-color);
+      }
+      .status-portal {
+        margin: 12px 0 0;
+        padding-top: 12px;
+        border-top: 1px solid var(--divider-color);
+        font-size: 0.9rem;
+      }
+      .status-portal a {
+        color: var(--primary-color);
+        font-weight: 500;
+      }
+      @media (max-width: 600px) {
+        .status-grid {
+          grid-template-columns: 1fr;
+        }
+        .status-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
       }
       /* Em tela estreita o logo e o titulo nao cabem lado a lado: o logo
          vai para cima e o bloco de texto ocupa a largura toda. */

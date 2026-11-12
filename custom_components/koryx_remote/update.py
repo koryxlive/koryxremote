@@ -67,7 +67,8 @@ class KoryxUpdateEntity(CoordinatorEntity[KoryxUpdateCoordinator], UpdateEntity)
             return None
         return (
             f"Versão {self._info.latest} disponível. "
-            "Atualize pelo HACS e reinicie o Home Assistant."
+            "Atualize pelo Marketplace (Configurações → Marketplace) e reinicie "
+            "o Home Assistant."
         )
 
     @callback

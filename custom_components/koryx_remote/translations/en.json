@@ -92,6 +92,22 @@
     "empty": "No devices found.",
     "empty_filter": "Nothing matches that name in this filter.",
     "select_all": "Select all visible",
-    "unselect_all": "Unselect all"
+    "unselect_all": "Unselect all",
+    "status_title": "Installation status",
+    "tunnel_label": "Tunnel",
+    "remote_address_label": "Remote address",
+    "plan_label": "Plan",
+    "expires_label": "Expires",
+    "no_expiry": "No expiration date",
+    "version_label": "Version",
+    "update_available": "Update available:",
+    "open_portal": "Open Koryx Remote portal",
+    "status_connected": "Connected",
+    "status_reconnecting": "Reconnecting",
+    "status_connecting": "Connecting",
+    "status_plan_expired": "Plan expired",
+    "status_credential_rejected": "Credential rejected",
+    "status_disconnected": "Disconnected",
+    "status_unavailable": "Unavailable"
   }
 }

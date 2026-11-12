@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 
 from .client import KoryxLink
-from .const import CONF_URL, DOMAIN
+from .const import CONF_EXPOSED_ENTITIES, CONF_URL, DOMAIN
 from .update_check import KoryxUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +38,10 @@ class _EntryState:
     # escolha: aqui o usuário quer o report state, e só o acesso que está
     # suspenso. Reativado quando o túnel volta (AUTH_OK).
     report_state_paused: bool = field(default=False)
+    # Última seleção anunciada à Alexa. O `options` update já chega com a lista
+    # nova; sem este snapshot não há como calcular o diff (saiu → DeleteReport,
+    # entrou → AddOrUpdateReport).
+    last_exposed: set[str] = field(default_factory=set)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -46,7 +52,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # "coroutine 'Config.async_update' was never awaited" a cada setup.
         await hass.config.async_update(external_url=public_url)
     coordinator = KoryxUpdateCoordinator(hass, entry)
-    state = _EntryState(link=KoryxLink(hass, entry), update_coordinator=coordinator)
+    state = _EntryState(
+        link=KoryxLink(hass, entry),
+        update_coordinator=coordinator,
+        last_exposed=_exposed_set(entry),
+    )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = state
     # Report State da Alexa acompanha o acesso: quando o vencimento corta o
     # túnel, o HA para de postar ChangeReport; quando a assinatura volta (o
@@ -115,12 +125,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _stop_on_shutdown))
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    # Catálogo da Alexa: quando o HA renomeia ou apaga uma entidade exposta, a
+    # Alexa precisa de DeleteReport/AddOrUpdateReport — senão guarda o id velho
+    # e o comando de voz vira NO_SUCH_ENDPOINT.
+    async def _on_registry_updated(event: Event[Any]) -> None:
+        await _async_entity_registry_updated(hass, entry, event)
+
+    entry.async_on_unload(
+        hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, _on_registry_updated)
+    )
     # Desligar o listener proativo no unload é responsabilidade do unsubscriber
     # que `async_enable_report_state` devolveu — guardado no `state`, não no
     # registro de `async_on_unload`, para podermos trocá-lo a cada update sem
     # acumular callbacks de unload que nunca seriam descartados.
     entry.async_on_unload(lambda: state.report_state_unsub and state.report_state_unsub())
     return True
+
+
+def _exposed_set(entry: ConfigEntry) -> set[str]:
+    """Seleção atual de entidades expostas à Alexa."""
+    return {
+        entity_id
+        for entity_id in (entry.options.get(CONF_EXPOSED_ENTITIES) or [])
+        if isinstance(entity_id, str)
+    }
 
 
 async def _async_refresh_report_state(
@@ -165,16 +193,79 @@ async def _async_set_report_state_active(
 async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Listener de `options`: o HA exige uma coroutine aqui, não uma função.
 
-    O `KoryxAlexaConfig` lê a seleção do `entry.options` a cada directive, então
-    não há cache para invalidar do lado da Alexa — só avisar a API de que a
-    lista mudou. O `report_state` é o único option com efeito colateral em
-    runtime, e é tratado no `_async_refresh_report_state`.
+    A seleção já chega nova em `entry.options`. O snapshot `last_exposed` é o
+    que a Alexa ainda conhece: o diff vira `DeleteReport` (saiu) e
+    `AddOrUpdateReport` (entrou). Sem o sync, a Alexa cacheia o Discover antigo
+    e o comando de voz cai em `NO_SUCH_ENDPOINT` nos ids que sumiram.
+
+    O `report_state` continua com efeito colateral em runtime
+    (`_async_refresh_report_state`). A API também recebe o aviso de lista
+    mudada (`notify_entities_changed`) para o log/cache dela.
     """
     state: _EntryState | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if state is None:
         return
     await _async_refresh_report_state(hass, entry, state)
+
+    new_exposed = _exposed_set(entry)
+    to_remove = sorted(state.last_exposed - new_exposed)
+    to_add = sorted(new_exposed - state.last_exposed)
+    if to_add or to_remove:
+        from .alexa import async_sync_alexa_catalog
+
+        await async_sync_alexa_catalog(
+            hass, entry, to_add=to_add, to_remove=to_remove
+        )
+    state.last_exposed = new_exposed
+
     await state.link.notify_entities_changed()
+
+
+async def _async_entity_registry_updated(
+    hass: HomeAssistant, entry: ConfigEntry, event: Event[Any]
+) -> None:
+    """DeleteReport/AddOrUpdateReport quando o HA apaga ou renomeia entidade.
+
+    Só age em entidades que estavam (ou estão) na seleção. Create e update de
+    atributos descritivos ficam de fora — o plano cobre remove e troca de
+    `entity_id`, que são os que deixam a Alexa com id fantasma.
+    """
+    state: _EntryState | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if state is None:
+        return
+
+    data = event.data
+    action = data.get("action")
+    entity_id = data.get("entity_id")
+    if not isinstance(entity_id, str):
+        return
+
+    to_add: list[str] = []
+    to_remove: list[str] = []
+
+    if action == "remove":
+        if entity_id in state.last_exposed:
+            to_remove.append(entity_id)
+            state.last_exposed.discard(entity_id)
+    elif action == "update":
+        old_entity_id = data.get("old_entity_id")
+        if isinstance(old_entity_id, str) and old_entity_id in state.last_exposed:
+            to_remove.append(old_entity_id)
+            state.last_exposed.discard(old_entity_id)
+            # Só anuncia o id novo se a seleção já o contém e ele existe.
+            if (
+                entity_id in _exposed_set(entry)
+                and hass.states.get(entity_id) is not None
+            ):
+                to_add.append(entity_id)
+                state.last_exposed.add(entity_id)
+
+    if not to_add and not to_remove:
+        return
+
+    from .alexa import async_sync_alexa_catalog
+
+    await async_sync_alexa_catalog(hass, entry, to_add=to_add, to_remove=to_remove)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
